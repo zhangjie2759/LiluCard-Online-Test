@@ -2200,9 +2200,47 @@ function isOnlineMode() {
 }
 
 function isOnlineRoomReady() {
+  return Boolean(isOnlineMode() && onlineRoomData && onlineRoomData.status === 'playing')
+}
+
+function isOnlineRoomJoined() {
   if (!isOnlineMode() || !onlineRoomData) return false
   const players = onlineRoomData.players || {}
-  return onlineRoomData.status === 'playing' || Boolean(players.p1 && players.p2)
+  return Boolean(players.p1 && players.p2)
+}
+
+function isOnlineSelfReady() {
+  if (!isOnlineMode() || !onlineRoomData || !onlinePlayerId) return false
+  const players = onlineRoomData.players || {}
+  return Boolean(players[onlinePlayerId] && players[onlinePlayerId].ready)
+}
+
+function isOnlineOpponentReady() {
+  if (!isOnlineMode() || !onlineRoomData || !onlinePlayerId) return false
+  const otherPlayerId = getOnlineOtherPlayer(onlinePlayerId)
+  const players = onlineRoomData.players || {}
+  return Boolean(players[otherPlayerId] && players[otherPlayerId].ready)
+}
+
+function areOnlineBothReady() {
+  if (!isOnlineMode() || !onlineRoomData) return false
+  const players = onlineRoomData.players || {}
+  return Boolean(players.p1 && players.p2 && players.p1.ready && players.p2.ready)
+}
+
+function getOnlineLobbyMessage() {
+  if (!onlineRoomId) return '房间尚未创建'
+  if (!onlineRoomData) return `房间 ${onlineRoomId}：同步中...`
+
+  const players = onlineRoomData.players || {}
+  const p1Ready = Boolean(players.p1 && players.p1.ready)
+  const p2Ready = Boolean(players.p2 && players.p2.ready)
+
+  if (!players.p2) {
+    return `房间码 ${onlineRoomId}：等待另一名玩家加入`
+  }
+
+  return `准备状态：玩家1 ${p1Ready ? '已准备' : '未准备'}｜玩家2 ${p2Ready ? '已准备' : '未准备'}`
 }
 
 function isOnlineMyTurn() {
@@ -2219,7 +2257,7 @@ function createInitialOnlineGame() {
     currentMealIndex: 0,
     gameEnded: false,
     mealEnded: false,
-    message: '等待玩家2加入房间',
+    message: '等待玩家2加入房间，加入后双方点击准备',
     comboMessage: '',
     turn: 'opening',
     // 早餐随机一次先手；午餐自动换边，晚餐再换回来；夜宵不分先后。
@@ -2344,7 +2382,7 @@ async function createOnlineRoomFromHome() {
       if (data && data.game) {
         applyOnlineGameToLocal(data.game)
         if (data.status === 'waiting') {
-          message = `房间码 ${onlineRoomId}：等待玩家2加入`
+          message = getOnlineLobbyMessage()
         }
       }
       render()
@@ -2520,9 +2558,47 @@ function finishNightMealOnlineAndSave() {
   finishMeal()
 }
 
+async function playerReadyOnline() {
+  if (!isOnlineMode() || !onlineRoomId || !onlinePlayerId) return
+
+  await ensureOnlineLayer()
+
+  const otherPlayerId = getOnlineOtherPlayer(onlinePlayerId)
+
+  // 先标记自己已准备
+  await window.updateRoom(onlineRoomId, {
+    [`players/${onlinePlayerId}/ready`]: true,
+    "game/message": `${getOnlinePlayerName(onlinePlayerId)}已准备，等待对手准备`
+  })
+
+  // 再读取一次最新房间，避免本地轮询数据滞后导致双方都准备后不开始
+  let latest = null
+  if (window.getRoom) {
+    latest = await window.getRoom(onlineRoomId)
+  }
+
+  const players = latest && latest.players ? latest.players : (onlineRoomData && onlineRoomData.players ? onlineRoomData.players : {})
+  const p1Ready = Boolean(players.p1 && players.p1.ready)
+  const p2Ready = Boolean(players.p2 && players.p2.ready)
+
+  if (players.p1 && players.p2 && p1Ready && p2Ready) {
+    const nextGame = latest && latest.game ? latest.game : createInitialOnlineGame()
+    nextGame.turn = 'opening'
+    nextGame.message = '双方已准备：起手阶段不分先后，双方各抽2张'
+
+    await window.updateRoom(onlineRoomId, {
+      status: 'playing',
+      game: nextGame
+    })
+  } else {
+    message = getOnlineLobbyMessage()
+    render()
+  }
+}
+
 async function playerDrawOnline(type) {
   if (!isOnlineRoomReady()) {
-    message = onlineRoomId ? `房间码 ${onlineRoomId}：等待另一名玩家加入` : '房间尚未准备好'
+    message = getOnlineLobbyMessage()
     render()
     return
   }
@@ -2658,7 +2734,7 @@ async function playerDrawOnline(type) {
 
 async function playerStandOnline() {
   if (!isOnlineRoomReady()) {
-    message = onlineRoomId ? `房间码 ${onlineRoomId}：等待另一名玩家加入` : '房间尚未准备好'
+    message = getOnlineLobbyMessage()
     render()
     return
   }
@@ -2784,7 +2860,13 @@ function drawOnlineRoomBadge() {
 
   drawText(badgeText, W / 2, y + 6, 11, '#fff', 'center', 'bold')
 
-  if (isOnlineRoomReady() && !gameEnded && !mealEnded) {
+  if (!isOnlineRoomReady()) {
+    const readyText = getOnlineLobbyMessage()
+    drawText(readyText, W / 2, y + 32, 11, '#111', 'center', 'bold')
+    return
+  }
+
+  if (!gameEnded && !mealEnded) {
     let turnText = ''
 
     if (isOnlineOpeningStage()) {
@@ -2799,7 +2881,6 @@ function drawOnlineRoomBadge() {
     drawText(turnText, W - 22, y + 32, 12, '#111', 'right', 'bold')
   }
 }
-
 function drawBattleScreen() {
   const actionH = 92
   const actionY = H - SAFE_BOTTOM - actionH
@@ -2832,8 +2913,34 @@ function drawGameButtons() {
   const buttonH = 72
 
   if (!mealEnded) {
-    const self = sides.self
+    const self = sides.self || createSideState('你')
     const isNight = isNightMeal()
+    const leftX = 16
+    const leftY = y
+    const innerGap = 8
+    const smallW = (leftW - innerGap) / 2
+    const smallH = (buttonH - innerGap) / 2
+
+    // 联机房间未正式开始：显示准备按钮，并显示对方准备状态。
+    if (isOnlineMode() && !isOnlineRoomReady()) {
+      const readyTitle = isOnlineRoomJoined() ? '准备阶段' : '等待加入'
+      drawText(readyTitle, leftX + 2, leftY - 17, 12, '#111', 'left', 'bold')
+      drawText(isOnlineSelfReady() ? '你已准备' : '请准备', leftX + leftW - 2, leftY - 17, 12, isOnlineSelfReady() ? '#0E5C44' : '#E94335', 'right', 'bold')
+
+      drawStickerButton('draw_meat', '荤', leftX, leftY, smallW, smallH, true)
+      drawStickerButton('draw_veg', '素', leftX + smallW + innerGap, leftY, smallW, smallH, true)
+      drawStickerButton('draw_staple', '主食', leftX, leftY + smallH + innerGap, smallW, smallH, true)
+      drawStickerButton('draw_dessert', '甜点', leftX + smallW + innerGap, leftY + smallH + innerGap, smallW, smallH, true)
+
+      let readyText = isOnlineSelfReady() ? '已准备' : '准备'
+      let readySubText = isOnlineRoomJoined()
+        ? (isOnlineOpponentReady() ? '对手已准备' : '等待对手准备')
+        : '等待玩家加入'
+
+      drawCleanStandButton('online_ready', readyText, 16 + leftW + gap, y, standW, buttonH, readySubText)
+      return
+    }
+
     const onlineLocked = isOnlineMode() && !canOnlineSelfActNow()
 
     const drawDisabled = onlineLocked || (
@@ -2842,18 +2949,13 @@ function drawGameButtons() {
         : (!isSelfOpeningPhase() && records.self.dayOrdersUsed >= TOTAL_ORDERS_PER_DAY) || self.stood || self.busted
     )
 
-    const leftX = 16
-    const leftY = y
-    const innerGap = 8
-    const smallW = (leftW - innerGap) / 2
-    const smallH = (buttonH - innerGap) / 2
-
     let actionTitle = '叫外卖'
     if (isOnlineMode() && isOnlineOpeningStage()) {
       actionTitle = sides.self.cards.length < 2 ? '起手抽牌' : '等待起手'
     } else if (isOnlineMode() && onlineLocked) {
       actionTitle = '等待对手'
     }
+
     drawText(actionTitle, leftX + 2, leftY - 17, 12, '#111', 'left', 'bold')
     drawText(`${records.self.dayOrdersUsed}/${TOTAL_ORDERS_PER_DAY}`, leftX + leftW - 2, leftY - 17, 12, '#777', 'right', 'bold')
 
@@ -2882,7 +2984,6 @@ function drawGameButtons() {
     }
   }
 }
-
 function drawStartScreen() {
   buttons = []
   preloadGameImages()
@@ -2994,6 +3095,11 @@ function handleTouch(e) {
 
   if (id === 'loading') {
     render()
+    return
+  }
+
+  if (id === 'online_ready') {
+    playerReadyOnline()
     return
   }
 

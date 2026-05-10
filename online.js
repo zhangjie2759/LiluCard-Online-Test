@@ -112,6 +112,7 @@
       players: {
         p1: {
           joined: true,
+          ready: false,
           name: "玩家1",
           joinedAt: now()
         }
@@ -142,14 +143,15 @@
 
     if (players.p1 && !players.p2) {
       await patchRoom(id, {
-        status: "playing",
+        status: "waiting",
         updatedAt: now(),
         "players/p2": {
           joined: true,
+          ready: false,
           name: "玩家2",
           joinedAt: now()
         },
-        "game/message": "玩家2已加入：起手阶段不分先后，双方各抽2张"
+        "game/message": "玩家2已加入，请双方点击准备"
       })
 
       return {
@@ -226,5 +228,6 @@
   window.listenRoom = listenRoom
   window.updateRoom = updateRoom
   window.deleteRoom = deleteRoom
+  window.getRoom = getRoom
   window.liluOnlineReady = true
 })()
