@@ -198,7 +198,7 @@
       }
 
       if (!stopped) {
-        timer = setTimeout(tick, 900)
+        timer = setTimeout(tick, 350)
       }
     }
 
