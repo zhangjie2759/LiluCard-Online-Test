@@ -1,14 +1,13 @@
-利禄卡 Online v0.8 上传说明
+利禄卡 Online v1.0 上传说明
 
-这版修复/新增：
-1. 联机房间增加“准备”按钮。
-2. 双方都能看到准备状态：玩家1/玩家2 已准备/未准备。
-3. 双方都准备后才正式开始。
-4. 起手前两张依然不分先后，双方各自抽满2张。
-5. 早餐起手完成后随机先手；午餐自动换先手；晚餐再换回；夜宵不分先后。
-6. 保留原本单机游戏、卡牌数据、图片路径、UI和规则。
+这版重点修复：
+1. “准备”按钮点不动的问题。
+2. 准备按钮改用 stand 命中区，避免旧 online_ready 分支不触发。
+3. 点击准备后会立刻显示“正在准备...”。
+4. 修复 Cannot read properties of undefined (reading 'length')。
+5. 强制缓存刷新：index.html 加载 game.js?v=10，game.js 加载 online.js?v=10。
 
-上传到 GitHub 仓库根目录，替换这三个文件：
+上传到 GitHub 仓库根目录，替换：
 - index.html
 - game.js
 - online.js
@@ -16,5 +15,7 @@
 继续保留：
 - images/cards 文件夹
 
-上传后建议用这个链接强制刷新：
-https://zhangjie2759.github.io/LiluCard-Online-Test/?v=8
+上传后请用这个链接打开：
+https://zhangjie2759.github.io/LiluCard-Online-Test/?v=10
+
+请重新开一个新房间测试，不要用旧房间。
