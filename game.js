@@ -1,5 +1,5 @@
 // game.js
-// 利禄卡 Online v3.8 图片加载回滚稳定版
+// 利禄卡 Online v3.9 清理稳定版：图片/音乐/resize逻辑收束
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -146,8 +146,6 @@ const CARD_BACK_PATHS = {
   '甜点': 'images/cards/blue_back.png'
 }
 
-// 图片缓存版本号：用于强制 iPhone / 微信浏览器重新请求图片，避免旧失败缓存。
-const IMAGE_CACHE_VERSION = 'v33'
 
 const TYPE_COLORS = {
   '荤': '#FF9BB4',
@@ -172,15 +170,6 @@ let buttons = []
 let message = ''
 let rulesExpanded = false
 
-let loadingProgress = 0
-let loadingLoaded = 0
-let loadingTotal = 0
-let loadingFailed = []
-let loadingDone = false
-let loadingStarted = false
-let loadingStatusText = '正在备餐...'
-let loadingStartTime = 0
-let loadingCanSkip = false
 
 // =========================
 // 背景音乐 BGM
@@ -213,6 +202,7 @@ let onlineActionLockUntil = 0
 let game = createGame('single')
 
 
+
 function initBgm() {
   if (bgm) return
 
@@ -235,7 +225,7 @@ function initBgm() {
 
     bgm.addEventListener('error', () => {
       bgmLoadFailed = true
-      bgmStatusText = '音乐文件未找到：请检查 audio/bgm.mp3'
+      bgmStatusText = '音乐文件未找到'
       requestRender()
     })
 
@@ -248,6 +238,7 @@ function initBgm() {
 }
 
 
+
 function startBgm() {
   if (!bgmEnabled) return
 
@@ -258,11 +249,9 @@ function startBgm() {
   try {
     bgm.muted = false
     bgm.volume = 0.32
-    if (!bgm.src) bgm.src = BGM_SRC
     if (bgm.readyState === 0) bgm.load()
   } catch (err) {}
 
-  // iOS 上必须由用户手势触发。这里保持同步调用，不放进 setTimeout/Promise 外层。
   const playPromise = bgm.play()
 
   if (playPromise && playPromise.then) {
@@ -274,7 +263,7 @@ function startBgm() {
       })
       .catch(() => {
         bgmStarted = false
-        bgmStatusText = '点“音乐”或任意按钮启动'
+        bgmStatusText = '点音乐启动'
         requestRender()
       })
   } else {
@@ -336,232 +325,6 @@ function drawMusicButton() {
 }
 
 
-// =========================
-// 资源预加载 Loading
-// =========================
-
-function getAllImageSources() {
-  const srcs = []
-
-  Object.keys(CARD_BACK_PATHS).forEach(key => srcs.push(CARD_BACK_PATHS[key]))
-  Object.keys(CARD_IMAGE_PATHS).forEach(key => srcs.push(CARD_IMAGE_PATHS[key]))
-
-  return Array.from(new Set(srcs))
-}
-
-
-function loadImageWithRetry(src, retryLeft) {
-  return new Promise(resolve => {
-    let finished = false
-    let currentMode = 'versioned'
-    let timer = null
-
-    const img = new Image()
-    img.loaded = false
-    img.failed = false
-    img.retryRaw = false
-    img.decoding = 'async'
-    img.loading = 'eager'
-
-    function finish(result) {
-      if (finished) return
-      finished = true
-      if (timer) clearTimeout(timer)
-      resolve(result)
-    }
-
-    function markSuccess() {
-      img.loaded = true
-      img.failed = false
-      imageCache[src] = img
-      finish({ src, ok: true })
-    }
-
-    function markFailedOrRetry() {
-      if (finished) return
-
-      if (currentMode === 'versioned') {
-        currentMode = 'raw'
-        img.retryRaw = true
-        startLoad(src, 'raw')
-        return
-      }
-
-      if (retryLeft > 0) {
-        setTimeout(() => {
-          loadImageWithRetry(src, retryLeft - 1).then(resolve)
-        }, 160)
-        finished = true
-        if (timer) clearTimeout(timer)
-        return
-      }
-
-      img.loaded = false
-      img.failed = true
-      imageCache[src] = img
-      finish({ src, ok: false })
-    }
-
-    function startLoad(url, mode) {
-      if (timer) clearTimeout(timer)
-
-      // iPhone17 / 部分微信 WebView 可能既不触发 onload，也不触发 onerror。
-      // 必须给每张图一个超时，否则 loading 会永远卡在 0%。
-      timer = setTimeout(() => {
-        markFailedOrRetry()
-      }, 2600)
-
-      img.onload = markSuccess
-      img.onerror = markFailedOrRetry
-      img.src = url
-    }
-
-    const connector = src.indexOf('?') >= 0 ? '&' : '?'
-    startLoad(`${src}${connector}${IMAGE_CACHE_VERSION}`, 'versioned')
-  })
-}
-
-
-function startAssetPreload() {
-  if (loadingStarted) return
-  loadingStarted = true
-  loadingStartTime = Date.now()
-  loadingCanSkip = false
-
-  const sources = getAllImageSources()
-  loadingTotal = sources.length
-  loadingLoaded = 0
-  loadingFailed = []
-  loadingProgress = 1
-  loadingStatusText = '正在连接图片资源...'
-
-  // 音乐只 preload，不强制播放。iPhone 必须等玩家点击后才能真正播放。
-  try {
-    initBgm()
-  } catch (err) {}
-
-  // 如果 iPhone 某些资源一直不回调，至少允许用户跳过。
-  setTimeout(() => {
-    if (appMode === 'loading' && !loadingDone) {
-      loadingCanSkip = true
-      loadingStatusText = loadingLoaded > 0
-        ? `已加载 ${loadingLoaded}/${loadingTotal}，可继续等待或跳过`
-        : '图片连接较慢，可继续等待或跳过'
-      requestRender()
-    }
-  }, 3200)
-
-  if (sources.length === 0) {
-    loadingProgress = 100
-    loadingDone = true
-    appMode = 'home'
-    requestRender()
-    return
-  }
-
-  const concurrency = 4
-  let cursor = 0
-
-  function runNext() {
-    if (cursor >= sources.length) return
-
-    const src = sources[cursor]
-    cursor += 1
-
-    loadImageWithRetry(src, 1).then(result => {
-      loadingLoaded += 1
-      loadingProgress = Math.max(1, Math.round((loadingLoaded / loadingTotal) * 100))
-
-      if (!result.ok) {
-        loadingFailed.push(result.src)
-      }
-
-      if (loadingLoaded >= loadingTotal) {
-        loadingDone = true
-        loadingProgress = 100
-
-        if (loadingFailed.length > 0) {
-          loadingCanSkip = true
-          loadingStatusText = `有 ${loadingFailed.length} 张图片加载失败，可重试或继续`
-        } else {
-          loadingStatusText = '备餐完成'
-          setTimeout(() => {
-            if (appMode === 'loading') {
-              appMode = 'home'
-              requestRender()
-            }
-          }, 220)
-        }
-      } else {
-        loadingStatusText = `正在备餐 ${loadingProgress}%`
-        runNext()
-      }
-
-      requestRender()
-    })
-  }
-
-  for (let i = 0; i < concurrency; i++) {
-    runNext()
-  }
-}
-
-
-function retryAssetPreload() {
-  loadingStarted = false
-  loadingDone = false
-  loadingProgress = 0
-  loadingLoaded = 0
-  loadingFailed = []
-  loadingCanSkip = false
-  loadingStartTime = 0
-  loadingStatusText = '重新备餐...'
-  startAssetPreload()
-  requestRender()
-}
-
-
-function drawLoadingScreen() {
-  const panelW = Math.min(W - 48, 330)
-  const panelH = 280
-  const x = (W - panelW) / 2
-  const y = Math.max(SAFE_TOP + 70, (H - panelH) / 2)
-
-  drawRoundRect(x, y, panelW, panelH, 28, '#FFFFFF', '#111', 4)
-
-  drawText('正在备餐', W / 2, y + 30, 36, '#111', 'center', 'bold')
-  drawText('Loading Cards', W / 2, y + 78, 13, '#777', 'center', 'bold')
-
-  const barX = x + 34
-  const barY = y + 118
-  const barW = panelW - 68
-  const barH = 24
-  const ratio = Math.max(0, Math.min(1, loadingProgress / 100))
-
-  drawRoundRect(barX, barY, barW, barH, 12, '#F3E9D8', '#111', 2.5)
-  ctx.save()
-  ctx.beginPath()
-  ctx.rect(barX, barY, barW * ratio, barH)
-  ctx.clip()
-  drawRoundRect(barX, barY, barW, barH, 12, '#FFE169', null, 0)
-  ctx.restore()
-  drawText(`${loadingProgress}%`, W / 2, barY + 5, 12, '#111', 'center', 'bold')
-
-  wrapText(loadingStatusText, x + 30, y + 160, panelW - 60, 18, 12, loadingFailed.length ? '#E94335' : '#555', 'bold', 2)
-
-  if (loadingDone && loadingFailed.length === 0) {
-    drawText('即将进入首页', W / 2, y + 212, 13, '#777', 'center', 'bold')
-    return
-  }
-
-  if (loadingCanSkip || (loadingDone && loadingFailed.length > 0)) {
-    const btnW = (panelW - 74) / 2
-    addButton('loading_retry', '重试', x + 26, y + 216, btnW, 42, '#FFFFFF', '#111', 16)
-    addButton('loading_continue', '跳过', x + 48 + btnW, y + 216, btnW, 42, '#111', '#fff', 16)
-  } else {
-    drawText('首次加载可能需要几秒', W / 2, y + 224, 12, '#999', 'center', 'bold')
-  }
-}
 
 // =========================
 // 基础工具
@@ -2028,15 +1791,16 @@ function requestRender() {
 
 
 
+
 function retryFailedImages() {
   Object.keys(imageCache).forEach(key => {
     const img = imageCache[key]
     if (img && img.failed) {
       delete imageCache[key]
-      getImage(key)
     }
   })
 }
+
 
 
 
@@ -2045,14 +1809,14 @@ function preloadGameImages() {
   const backs = Object.keys(CARD_BACK_PATHS).map(key => CARD_BACK_PATHS[key])
   const fronts = Object.keys(CARD_IMAGE_PATHS).map(key => CARD_IMAGE_PATHS[key])
 
-  // 先预热卡背，保证隐藏牌尽快出现。
+  // 卡背优先，保证底牌/隐藏牌先有图。
   backs.forEach(src => getImage(src))
 
-  // 正面卡图后台轻量预热，不阻塞进入首页。
+  // 正面卡图后台预热，但不阻塞首页和游戏流程。
   let index = 0
 
   function step() {
-    const batchSize = 3
+    const batchSize = 4
 
     for (let i = 0; i < batchSize && index < fronts.length; i++) {
       getImage(fronts[index])
@@ -2060,11 +1824,23 @@ function preloadGameImages() {
     }
 
     if (index < fronts.length) {
-      setTimeout(step, 100)
+      setTimeout(step, 120)
     }
   }
 
   setTimeout(step, 120)
+}
+
+
+let imageRenderTimer = null
+
+function scheduleImageRender() {
+  if (imageRenderTimer) return
+
+  imageRenderTimer = setTimeout(() => {
+    imageRenderTimer = null
+    requestRender()
+  }, 90)
 }
 
 // =========================
@@ -2270,6 +2046,7 @@ const imageCache = {}
 
 
 
+
 function getImage(src) {
   if (!src) return null
   if (imageCache[src]) return imageCache[src]
@@ -2283,17 +2060,16 @@ function getImage(src) {
   img.onload = () => {
     img.loaded = true
     img.failed = false
-    requestRender()
+    scheduleImageRender()
   }
 
   img.onerror = () => {
     img.loaded = false
     img.failed = true
-    requestRender()
+    scheduleImageRender()
   }
 
-  // v3.8：回滚到最稳定的原始路径，不再默认添加 ?v 参数。
-  // 之前某些 iPhone WebView 对带参数的图片请求不稳定。
+  // v3.9：只使用原始路径，避免部分 iPhone / WebView 对带参数图片请求不稳定。
   img.src = src
 
   imageCache[src] = img
@@ -2988,6 +2764,7 @@ function drawTopControls() {
 
 
 
+
 function render() {
   buttons = []
   ctx.clearRect(0, 0, W, H)
@@ -3135,12 +2912,14 @@ async function handleAction(id) {
 }
 
 
+
 function onPointer(clientX, clientY) {
   const id = hitButton(clientX, clientY)
   if (!id || id === 'noop') return
 
-  if (id !== 'music_toggle') {
-    startBgm()
+  // 音乐只在明确按钮或进入游戏相关按钮时尝试启动，避免每次触摸都反复 play。
+  if (id === 'music_toggle' || id === 'single_start' || id === 'online_create' || id === 'online_join') {
+    if (id !== 'music_toggle') startBgm()
   }
 
   retryFailedImages()
@@ -3154,11 +2933,6 @@ function onPointer(clientX, clientY) {
 
 canvas.addEventListener('touchstart', event => {
   event.preventDefault()
-
-  // iOS 17+ 有时第一次 play 会被吞，任何触摸都顺手尝试解锁一次。
-  if (bgmEnabled && (!bgmStarted || (bgm && bgm.paused))) {
-    startBgm()
-  }
 
   const touch = event.touches && event.touches[0]
   if (!touch) return
@@ -3206,15 +2980,26 @@ canvas.addEventListener('mousedown', event => {
   onPointer(event.clientX, event.clientY)
 })
 
-window.addEventListener('resize', () => resizeCanvas(false))
+let resizeTimer = null
+
+function scheduleResize(force) {
+  if (resizeTimer) clearTimeout(resizeTimer)
+
+  resizeTimer = setTimeout(() => {
+    resizeTimer = null
+    resizeCanvas(Boolean(force))
+  }, force ? 80 : 140)
+}
+
+window.addEventListener('resize', () => scheduleResize(false))
 
 if (window.visualViewport) {
-  window.visualViewport.addEventListener('resize', () => resizeCanvas(false))
-  window.visualViewport.addEventListener('scroll', () => resizeCanvas(false))
+  window.visualViewport.addEventListener('resize', () => scheduleResize(false))
+  window.visualViewport.addEventListener('scroll', () => scheduleResize(false))
 }
 
 window.addEventListener('orientationchange', () => {
-  setTimeout(() => resizeCanvas(true), 80)
+  scheduleResize(true)
   setTimeout(() => resizeCanvas(true), 360)
 })
 
