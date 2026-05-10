@@ -1,5 +1,5 @@
 // game.js
-// 利禄卡 Online v2.6 夜宵展示与提示修复版
+// 利禄卡 Online v2.7 联机同步防卡住版
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -120,6 +120,8 @@ let startRequested = false
 let startOverlayText = ''
 let startOverlayUntil = 0
 let localGameActionSeq = 0
+let pendingWriteUntil = 0
+let pendingActionId = ''
 
 let game = createGame('single')
 
@@ -1075,21 +1077,170 @@ function singleAfterPlayerAction() {
 // =========================
 
 
-async function saveOnlineGame() {
-  if (appMode !== 'online' || !roomId) return
 
-  const nextGame = normalizeGame(game)
-  nextGame.actionSeq = Number(nextGame.actionSeq || 0) + 1
+function getOnlineStatusByGame(g) {
+  if (g.phase === 'day_result') return 'finished'
+  if (g.phase === 'lobby') return 'lobby'
+  return 'playing'
+}
+
+function isGlobalActionAfterLocal(actionId, localGame) {
+  // 这些动作会改变整局公共状态，可以整包写入。
+  if (actionId === 'reveal_night') return true
+  if ((actionId === 'draw_meat' || actionId === 'draw_veg' || actionId === 'draw_staple' || actionId === 'draw_dessert' || actionId === 'stand') && localGame.phase === 'meal_result') return true
+  if (actionId === 'next' && localGame.phase !== 'meal_result') return true
+  if (actionId === 'replay_ready' && localGame.phase === 'opening') return true
+  return false
+}
+
+function buildOwnPatch(localGame, pid, actionSeq) {
+  const patch = {}
+
+  patch[`game/players/${pid}`] = normalizePlayerState(localGame.players[pid])
+  patch[`game/records/${pid}`] = normalizeRecord(localGame.records[pid])
+
+  // deck 可以更新，但就算两边同时写 deck，也不会覆盖玩家手牌。
+  patch['game/deck'] = safeArray(localGame.deck)
+
+  patch['game/phase'] = localGame.phase
+  patch['game/mealIndex'] = localGame.mealIndex
+  patch['game/turn'] = localGame.turn || null
+  patch['game/firstTurnPlayer'] = localGame.firstTurnPlayer || null
+  patch['game/message'] = localGame.message || ''
+  patch['game/comboMessage'] = localGame.comboMessage || ''
+  patch['game/actionSeq'] = actionSeq
+
+  if (localGame.nextReady) {
+    patch[`game/nextReady/${pid}`] = Boolean(localGame.nextReady[pid])
+  }
+
+  if (localGame.replayReady) {
+    patch[`game/replayReady/${pid}`] = Boolean(localGame.replayReady[pid])
+  }
+
+  return patch
+}
+
+function runPostSyncTransitions(g) {
+  const before = JSON.stringify({
+    phase: g.phase,
+    mealIndex: g.mealIndex,
+    turn: g.turn,
+    p1Cards: safeArray(g.players.p1.cards).length,
+    p2Cards: safeArray(g.players.p2.cards).length,
+    p1Stood: g.players.p1.stood,
+    p2Stood: g.players.p2.stood,
+    p1Night: safeArray(g.players.p1.nightChoices).length,
+    p2Night: safeArray(g.players.p2.nightChoices).length,
+    nextReady: g.nextReady,
+    replayReady: g.replayReady
+  })
+
+  if (g.phase === 'opening') {
+    enterMealPlayingIfReady(g)
+  } else if (g.phase === 'meal_playing') {
+    // v2.7：只有双方都主动收手后，才进入结算。
+    if (g.players.p1.stood && g.players.p2.stood) {
+      settleMeal(g)
+    }
+  } else if (g.phase === 'night_picking') {
+    if (getRemainingOrders(g, 'p1') <= 0 && getRemainingOrders(g, 'p2') <= 0) {
+      g.phase = 'night_ready'
+      g.turn = null
+      g.message = '双方夜宵已选完，点击展示夜宵'
+    }
+  } else if (g.phase === 'meal_result') {
+    if (g.nextReady && g.nextReady.p1 && g.nextReady.p2) {
+      enterNextMeal(g)
+    }
+  } else if (g.phase === 'day_result') {
+    if (g.replayReady && g.replayReady.p1 && g.replayReady.p2) {
+      const fresh = createReplayGameFrom(g)
+      Object.keys(fresh).forEach(key => {
+        g[key] = fresh[key]
+      })
+    }
+  }
+
+  const after = JSON.stringify({
+    phase: g.phase,
+    mealIndex: g.mealIndex,
+    turn: g.turn,
+    p1Cards: safeArray(g.players.p1.cards).length,
+    p2Cards: safeArray(g.players.p2.cards).length,
+    p1Stood: g.players.p1.stood,
+    p2Stood: g.players.p2.stood,
+    p1Night: safeArray(g.players.p1.nightChoices).length,
+    p2Night: safeArray(g.players.p2.nightChoices).length,
+    nextReady: g.nextReady,
+    replayReady: g.replayReady
+  })
+
+  return before !== after
+}
+
+async function writeFullOnlineGame(nextGame) {
+  nextGame = normalizeGame(nextGame)
+  nextGame.actionSeq = Date.now()
 
   game = nextGame
   localGameActionSeq = nextGame.actionSeq
-
+  pendingWriteUntil = Date.now() + 900
   requestRender()
 
   await window.LiluOnline.updateRoom(roomId, {
     game: nextGame,
-    status: nextGame.phase === 'day_result' ? 'finished' : 'playing'
+    status: getOnlineStatusByGame(nextGame)
   })
+}
+
+
+async function saveOnlineGame() {
+  if (appMode !== 'online' || !roomId) return
+
+  const actionId = pendingActionId || ''
+  pendingActionId = ''
+
+  let local = normalizeGame(game)
+  const seq = Date.now()
+  local.actionSeq = seq
+
+  game = local
+  localGameActionSeq = seq
+  pendingWriteUntil = Date.now() + 900
+  requestRender()
+
+  // 结算、展示夜宵、进入下一餐这类“公共状态”动作，整包写入。
+  if (isGlobalActionAfterLocal(actionId, local)) {
+    await writeFullOnlineGame(local)
+    return
+  }
+
+  // 普通动作只写“自己的玩家状态”和必要共享字段，避免双方同时抽牌时互相覆盖。
+  await window.LiluOnline.updateRoom(roomId, buildOwnPatch(local, myPlayerId, seq))
+
+  // 写完后立刻读取一次最新房间，把双方状态合并，再判断是否可以自动推进阶段。
+  try {
+    const latestRoom = await window.LiluOnline.getRoom(roomId)
+
+    if (!latestRoom || !latestRoom.game) return
+
+    roomData = latestRoom
+    let merged = normalizeGame(latestRoom.game)
+
+    const changed = runPostSyncTransitions(merged)
+
+    if (changed) {
+      await writeFullOnlineGame(merged)
+    } else {
+      game = merged
+      localGameActionSeq = Math.max(localGameActionSeq, Number(merged.actionSeq || 0))
+      requestRender()
+    }
+  } catch (err) {
+    message = `同步失败：${err.message || err}`
+    requestRender()
+  }
 }
 
 async function createOnlineRoom() {
@@ -1113,6 +1264,9 @@ async function createOnlineRoom() {
     startRequested = false
     startOverlayText = ''
     startOverlayUntil = 0
+    localGameActionSeq = 0
+    pendingWriteUntil = 0
+    pendingActionId = ''
     game = normalizeGame(initialGame)
     message = `房间创建成功：${roomId}`
 
@@ -1124,10 +1278,10 @@ async function createOnlineRoom() {
       if (data && data.game) {
         const incomingGame = normalizeGame(data.game)
         const incomingSeq = Number(incomingGame.actionSeq || 0)
-        const currentSeq = Number(game && game.actionSeq || 0)
 
-        // 如果本机刚写入了较新的状态，忽略旧轮询，避免卡片短暂消失。
-        if (incomingSeq >= currentSeq || incomingSeq >= localGameActionSeq) {
+        // 本机刚点击后的极短时间内，如果轮询拿到旧快照，不要盖回去。
+        // 超过 pendingWriteUntil 后，无论如何接受数据库状态，避免因为时间戳差异卡死。
+        if (Date.now() > pendingWriteUntil || incomingSeq >= localGameActionSeq) {
           game = incomingGame
           localGameActionSeq = Math.max(localGameActionSeq, incomingSeq)
         }
@@ -1176,6 +1330,9 @@ async function joinOnlineRoom() {
     startRequested = false
     startOverlayText = ''
     startOverlayUntil = 0
+    localGameActionSeq = 0
+    pendingWriteUntil = 0
+    pendingActionId = ''
 
     if (unsubscribeRoom) unsubscribeRoom()
 
@@ -1185,10 +1342,10 @@ async function joinOnlineRoom() {
       if (data && data.game) {
         const incomingGame = normalizeGame(data.game)
         const incomingSeq = Number(incomingGame.actionSeq || 0)
-        const currentSeq = Number(game && game.actionSeq || 0)
 
-        // 如果本机刚写入了较新的状态，忽略旧轮询，避免卡片短暂消失。
-        if (incomingSeq >= currentSeq || incomingSeq >= localGameActionSeq) {
+        // 本机刚点击后的极短时间内，如果轮询拿到旧快照，不要盖回去。
+        // 超过 pendingWriteUntil 后，无论如何接受数据库状态，避免因为时间戳差异卡死。
+        if (Date.now() > pendingWriteUntil || incomingSeq >= localGameActionSeq) {
           game = incomingGame
           localGameActionSeq = Math.max(localGameActionSeq, incomingSeq)
         }
@@ -1316,6 +1473,9 @@ function leaveToHome() {
   startRequested = false
   startOverlayText = ''
   startOverlayUntil = 0
+  localGameActionSeq = 0
+  pendingWriteUntil = 0
+  pendingActionId = ''
   game = createGame('single')
   message = ''
   render()
@@ -2025,6 +2185,7 @@ function render() {
 
 async function handleAction(id) {
   const selfId = getSelfId()
+  pendingActionId = id
 
   if (id === 'rules_toggle') {
     rulesExpanded = !rulesExpanded
