@@ -1,20 +1,15 @@
-利禄卡 Online v0.2 上传说明
+利禄卡 Online v0.3 上传说明
 
-这版是在你上传的 game.js 基础上改的：
-1. 保留原本卡牌数据、图片路径、单机规则、UI绘制。
-2. 首页新增三个入口：
-   - 单机游戏
-   - 开房间
-   - 加入房间
-3. 开房间/加入房间使用 Firebase Realtime Database。
-4. 上传到 GitHub 时，请把这三个文件放在仓库根目录：
-   - index.html
-   - game.js
-   - online.js
-5. 原来的 images 文件夹必须保留，尤其是：
-   - images/cards/...
-6. 测试方式：
-   - 手机/电脑A点“开房间”
-   - 手机/电脑B点“加入房间”
-   - 输入房间码
-7. 当前是 GitHub 联机测试版，不是正式防作弊版。
+这版修复了 v0.2 可能出现的白屏问题：
+- 不再使用 type="module" 和 Firebase ESM import
+- 改为普通 script 加载，单机首页不会因为 Firebase 模块失败而白屏
+
+上传到 GitHub 仓库根目录：
+1. index.html
+2. game.js
+3. online.js
+
+注意：
+- 原来的 images/cards 文件夹必须保留。
+- 如果 GitHub Pages 有缓存，上传后等 1-3 分钟再刷新。
+- 手机上请强制刷新或重新打开链接。

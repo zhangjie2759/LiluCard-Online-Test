@@ -1,10 +1,11 @@
-import {
-  createRoom,
-  joinRoom,
-  listenRoom,
-  updateRoom,
-  deleteRoom
-} from './online.js'
+
+// Firebase 普通 script 版会把联机函数挂到 window 上。
+// 这样即使 Firebase CDN 加载失败，单机首页也不会白屏。
+const createRoom = window.createRoom
+const joinRoom = window.joinRoom
+const listenRoom = window.listenRoom
+const updateRoom = window.updateRoom
+const deleteRoom = window.deleteRoom
 
 // game.js
 // 卡路里牌 Demo：对战布局版
