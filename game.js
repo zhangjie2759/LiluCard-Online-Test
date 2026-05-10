@@ -1,5 +1,5 @@
 // game.js
-// 利禄卡 Online v4.1 资源调用稳定版：基于v3.9，不改视口布局
+// 利禄卡 Online v4.2 资源调用清理版：图片失败不永久缓存 / 提示条移除
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -1058,6 +1058,7 @@ function canPlayerAct(g, pid) {
 
 
 
+
 function getActionHint(g, selfId) {
   const oppId = otherPlayer(selfId)
   const self = g.players[selfId]
@@ -1087,31 +1088,31 @@ function getActionHint(g, selfId) {
 
     if (g.turn === selfId) {
       if (self.busted || isBusted(g, selfId)) {
-        return '你的点餐回合：你已爆牌，但可以继续叫外卖迷惑对方，或选择开吃'
+        return '已爆牌：可继续迷惑，或开吃摊牌'
       }
 
-      return '你的点餐回合：请选择外卖或收手'
+      return '你的回合：选外卖或开吃'
     }
 
-    return '对方点餐回合：请等待对方点外卖或开吃；对方底牌热量未知'
+    return '对方点餐中：等待对方操作'
   }
 
   if (g.phase === 'night_picking') {
     const remain = getRemainingOrders(g, selfId)
     const oppRemain = getRemainingOrders(g, oppId)
 
-    if (remain > 0) return `夜宵阶段：不分先后，你还要选择 ${remain} 单`
+    if (remain > 0) return `夜宵阶段：还要选择 ${remain} 单`
     if (oppRemain > 0) return '你已选完夜宵，等待对方选完'
     return '双方夜宵已选完，点击展示夜宵'
   }
 
   if (g.phase === 'night_ready') {
-    return '双方夜宵已选完，点击“展示夜宵”后统一揭晓'
+    return '双方夜宵已选完，点击展示夜宵'
   }
 
   if (g.phase === 'meal_result') {
     const next = g.mealIndex >= 3 ? '今日结算' : `进入${meals[g.mealIndex + 1].name}`
-    return `本餐结算完成，点击「${next}」`
+    return `本餐结算完成，点击${next}`
   }
 
   if (g.phase === 'day_result') return '今日结算完成'
@@ -1802,18 +1803,14 @@ function requestRender() {
 
 
 
+
 function retryFailedImages() {
-  Object.keys(imageCache).forEach(key => {
-    const img = imageCache[key]
-    if (img && img.failed) {
-      const attempts = img.attempts || 0
-      if (attempts < IMAGE_RETRY_MAX) {
-        delete imageCache[key]
-        getImage(key, true)
-      }
-    }
+  Object.keys(imageFailedUntil).forEach(key => {
+    delete imageFailedUntil[key]
   })
+  scheduleImageRender()
 }
+
 
 
 
@@ -1827,12 +1824,12 @@ function preloadGameImages() {
   // 卡背优先，保证底牌/隐藏牌先有图。
   backs.forEach(src => getImage(src, true))
 
-  // 正面卡图后台预热，但不阻塞首页和游戏流程。
-  // 这里保持温和速度，避免 iPhone 刚进页面时抢主线程。
+  // 正面卡图后台预热，不阻塞游戏流程。
+  // 保守分批，避免刚进入时和 UI 绘制抢主线程。
   let index = 0
 
   function step() {
-    const batchSize = 3
+    const batchSize = 2
 
     for (let i = 0; i < batchSize && index < fronts.length; i++) {
       getImage(fronts[index], false)
@@ -1840,11 +1837,11 @@ function preloadGameImages() {
     }
 
     if (index < fronts.length) {
-      setTimeout(step, 140)
+      setTimeout(step, 160)
     }
   }
 
-  setTimeout(step, 180)
+  setTimeout(step, 240)
 }
 
 
@@ -2056,9 +2053,9 @@ function hitButton(x, y) {
 
 // 图片懒加载
 const imageCache = {}
-const imageRetryTimers = {}
-const IMAGE_RETRY_DELAY = 1200
-const IMAGE_RETRY_MAX = 3
+const imageFailedUntil = {}
+const IMAGE_RETRY_DELAY = 900
+
 
 
 
@@ -2072,61 +2069,56 @@ function getImage(src, priority) {
 
   const cached = imageCache[src]
 
-  if (cached && cached.loaded) return cached
+  // 只缓存“已加载成功”或“正在加载中”的图片。
+  // 失败图片不永久缓存，避免某些 iPhone 一次失败后永远显示不出来。
+  if (cached && (cached.loaded || cached.loading)) return cached
 
-  // 当前画面正在用的图片优先处理：
-  // 如果之前失败了，超过短暂间隔后允许立即重新请求。
-  if (cached && cached.failed) {
-    const now = Date.now()
-    const last = cached.lastAttempt || 0
-    const attempts = cached.attempts || 0
-
-    if ((priority || now - last > IMAGE_RETRY_DELAY) && attempts < IMAGE_RETRY_MAX) {
-      delete imageCache[src]
-    } else {
-      return cached
-    }
-  } else if (cached) {
-    return cached
+  const now = Date.now()
+  if (imageFailedUntil[src] && now < imageFailedUntil[src]) {
+    return null
   }
 
   const img = new Image()
   img.loaded = false
+  img.loading = true
   img.failed = false
-  img.attempts = cached && cached.attempts ? cached.attempts + 1 : 1
-  img.lastAttempt = Date.now()
   img.decoding = 'async'
-  img.loading = priority ? 'eager' : 'auto'
+  img.loading = 'eager'
 
   img.onload = () => {
     img.loaded = true
+    img.loading = false
     img.failed = false
+    delete imageFailedUntil[src]
     scheduleImageRender()
   }
 
   img.onerror = () => {
     img.loaded = false
+    img.loading = false
     img.failed = true
-    scheduleImageRender()
 
-    // 不等用户点击，失败图片自动延迟重试几次。
-    if (img.attempts < IMAGE_RETRY_MAX && !imageRetryTimers[src]) {
-      imageRetryTimers[src] = setTimeout(() => {
-        delete imageRetryTimers[src]
-        if (imageCache[src] && imageCache[src].failed) {
-          delete imageCache[src]
-          getImage(src, false)
-        }
-      }, IMAGE_RETRY_DELAY)
-    }
+    // 失败后立即从缓存删除，只短暂冷却，之后当前画面需要它时会重新请求。
+    delete imageCache[src]
+    imageFailedUntil[src] = Date.now() + IMAGE_RETRY_DELAY
+
+    setTimeout(() => {
+      if (imageFailedUntil[src] && Date.now() >= imageFailedUntil[src]) {
+        delete imageFailedUntil[src]
+        scheduleImageRender()
+      }
+    }, IMAGE_RETRY_DELAY + 80)
+
+    scheduleImageRender()
   }
 
-  // 只使用原始路径，避免部分 iPhone / WebView 对带参数图片请求不稳定。
+  // 保持最稳定的原始路径，不加 ?v，不 decode，不等待 loading。
   img.src = src
 
   imageCache[src] = img
   return img
 }
+
 
 
 
@@ -2172,16 +2164,13 @@ function drawCard(card, x, y, w, h) {
     ctx.restore()
 
     if (!card.hidden) drawRoundRect(x, y, w, h, radius, null, '#111', 2)
-
-    // v3.4：图片正常显示时，不再额外叠中文名/卡路里，避免干扰卡面设计。
     return
   }
 
-  // 图片没加载出来时，仍然给一个清晰占位，避免玩家完全不知道这张牌是什么。
+  // 图片未就绪时，只做轻量占位，不影响玩法。
   drawRoundRect(x, y, w, h, 10, TYPE_COLORS[type] || '#fff', '#111', 2)
-  drawText(card.hidden ? '背面' : String(card.name || '').slice(0, 4), x + w / 2, y + h / 2 - 14, Math.max(9, Math.min(12, w / 4)), '#111', 'center', 'bold')
-  if (!card.hidden) drawText(`${card.kcal}kcal`, x + w / 2, y + h / 2 + 4, Math.max(8, Math.min(11, w / 5)), '#111', 'center', 'bold')
-  if (img && img.failed) drawText('重试中', x + w / 2, y + h - 18, 9, '#E94335', 'center', 'bold')
+  drawText(card.hidden ? '背面' : String(card.name || '').slice(0, 4), x + w / 2, y + h / 2 - 12, Math.max(9, Math.min(12, w / 4)), '#111', 'center', 'bold')
+  if (!card.hidden) drawText(`${card.kcal}kcal`, x + w / 2, y + h / 2 + 6, Math.max(8, Math.min(11, w / 5)), '#111', 'center', 'bold')
 }
 
 
@@ -2415,6 +2404,7 @@ function drawPlayerPanel(pid, label, x, y, w, h, isOpponent) {
 
 
 
+
 function drawCenterPanel(x, y, w, h) {
   const meal = getMeal()
   const selfId = getSelfId()
@@ -2424,11 +2414,11 @@ function drawCenterPanel(x, y, w, h) {
 
   drawRoundRect(x, y, w, h, 18, theme.center, '#111', 3)
 
-  drawText(`${game.mealIndex + 1}/4  ${meal.name}`, x + 16, y + 9, H < 720 ? 17 : 19, '#111', 'left', 'bold')
+  drawText(`${game.mealIndex + 1}/4  ${meal.name}`, x + 16, y + 10, H < 720 ? 17 : 19, '#111', 'left', 'bold')
 
-  // 警戒线固定在中间框第二行，避免不同机型遮挡。
+  // v4.2：中间框只保留警戒线，不再显示“你的回合...”文字，避免遮挡 UI。
   const barX = x + 16
-  const barY = y + (H < 720 ? 32 : 34)
+  const barY = y + Math.max(34, Math.floor(h * 0.48))
   const barW = w - 32
   const barH = H < 720 ? 18 : 20
   const r = barH / 2
@@ -2460,19 +2450,6 @@ function drawCenterPanel(x, y, w, h) {
 
   drawRoundRect(barX, barY, barW, barH, r, null, '#111', 2.5)
   drawText(`警戒线 ${meal.threshold}`, barX + barW / 2, barY + (H < 720 ? 3 : 4), H < 720 ? 10 : 11, '#111', 'center', 'bold')
-
-  let hint = getActionHint(game, selfId)
-
-  // 中间提示不再大段挤在面板里；压缩成长条提示。
-  hint = hint
-    .replace('你的点餐回合：请选择外卖或开吃', '你的回合：选外卖或开吃')
-    .replace('对方点餐回合：请等待对方点外卖或开吃；对方底牌热量未知', '对方点餐中：等待对方操作')
-    .replace('你的点餐回合：你已爆牌，但可以继续叫外卖迷惑对方，或选择开吃', '已爆牌：可继续迷惑，或开吃摊牌')
-
-  const hintH = H < 720 ? 18 : 20
-  const hintY = y + h - hintH - 8
-  drawRoundRect(x + 16, hintY, w - 32, hintH, hintH / 2, '#FFFFFF', '#111', 1.5)
-  drawText(hint, x + w / 2, hintY + (H < 720 ? 3 : 4), H < 720 ? 10 : 11, '#333', 'center', 'bold')
 }
 
 
@@ -2531,7 +2508,7 @@ function drawActionButtons() {
   } else if (game.phase === 'meal_playing') {
     if (game.turn === selfId) {
       standText = '开吃'
-      standSub = (game.players[selfId].busted || isBusted(game, selfId)) ? '结束并摊牌' : '确认热量'
+      standSub = (game.players[selfId].busted || isBusted(game, selfId)) ? '爆牌也可开吃' : '你的回合'
     } else {
       standText = '等待对方'
       standSub = '对方点餐回合'
