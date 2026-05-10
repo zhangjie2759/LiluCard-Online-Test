@@ -1,5 +1,5 @@
 // game.js
-// 利禄卡 Online v2.2 准备开局修复版
+// 利禄卡 Online v2.3 稳定体验修复版
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -119,6 +119,7 @@ let localReadyLocked = false
 let startRequested = false
 let startOverlayText = ''
 let startOverlayUntil = 0
+let localGameActionSeq = 0
 
 let game = createGame('single')
 
@@ -371,7 +372,15 @@ function normalizeGame(g) {
     turn: src.turn || null,
     phase: src.phase || 'lobby',
     message: src.message || '',
-    comboMessage: src.comboMessage || ''
+    comboMessage: src.comboMessage || '',
+    nextReady: {
+      p1: Boolean(src.nextReady && src.nextReady.p1),
+      p2: Boolean(src.nextReady && src.nextReady.p2)
+    },
+    replayReady: {
+      p1: Boolean(src.replayReady && src.replayReady.p1),
+      p2: Boolean(src.replayReady && src.replayReady.p2)
+    }
   }
 }
 
@@ -396,7 +405,9 @@ function createGame(mode) {
       ? '早餐开始：起手阶段，先抽2张起手牌'
       : '等待玩家加入并准备',
     comboMessage: '',
-    actionSeq: 0
+    actionSeq: 0,
+    nextReady: { p1: false, p2: false },
+    replayReady: { p1: false, p2: false }
   }
 }
 
@@ -405,6 +416,7 @@ function resetMealState(g) {
   g.players.p2 = createPlayerState()
   g.lastMealResult = null
   g.comboMessage = ''
+  g.nextReady = { p1: false, p2: false }
 }
 
 function enterOpening(g) {
@@ -453,6 +465,7 @@ function enterNextMeal(g) {
   }
 
   g.mealIndex = next
+  g.nextReady = { p1: false, p2: false }
 
   if (g.mealIndex === 3) {
     enterNightPicking(g)
@@ -716,6 +729,7 @@ function settleMeal(g) {
 
   g.phase = g.mealIndex >= meals.length - 1 ? 'meal_result' : 'meal_result'
   g.turn = null
+  g.nextReady = { p1: false, p2: false }
   g.message = `${meal.name}结算：${resultText}`
   g.comboMessage = ''
   g.actionSeq += 1
@@ -912,17 +926,64 @@ function revealNightAndSettle(g) {
   settleMeal(g)
 }
 
-function applyNext(g) {
+
+function applyNext(g, pid) {
   if (g.phase === 'meal_result') {
+    if (appMode === 'online') {
+      if (!g.nextReady) g.nextReady = { p1: false, p2: false }
+
+      g.nextReady[pid] = true
+
+      if (g.nextReady.p1 && g.nextReady.p2) {
+        enterNextMeal(g)
+      } else {
+        const nextName = g.mealIndex >= meals.length - 1 ? '今日结算' : meals[g.mealIndex + 1].name
+        g.message = `${getPlayerName(pid)}已确认，等待对方进入${nextName}`
+      }
+
+      g.actionSeq += 1
+      return
+    }
+
     enterNextMeal(g)
     g.actionSeq += 1
     return
   }
 
   if (g.phase === 'day_result') {
-    // 保留结果页，不自动重开
+    // 今日结算页不自动重开，由 replayReady 控制
   }
 }
+
+function createReplayGameFrom(g) {
+  const fresh = createGame(appMode === 'online' ? 'online' : 'single')
+  fresh.phase = 'opening'
+  fresh.message = '新一局开始：早餐起手阶段，双方各抽2张'
+  fresh.actionSeq = Number(g.actionSeq || 0) + 1
+  fresh.nextReady = { p1: false, p2: false }
+  fresh.replayReady = { p1: false, p2: false }
+  return fresh
+}
+
+function applyReplayReady(pid) {
+  if (appMode !== 'online') {
+    leaveToHome()
+    return
+  }
+
+  if (!game.replayReady) game.replayReady = { p1: false, p2: false }
+
+  game.replayReady[pid] = true
+
+  if (game.replayReady.p1 && game.replayReady.p2) {
+    game = createReplayGameFrom(game)
+    showStartOverlay('双方已准备，开始下一局...', 1200)
+  } else {
+    game.message = `${getPlayerName(pid)}已准备下一局，等待对方准备`
+    game.actionSeq += 1
+  }
+}
+
 
 // =========================
 // 单机 AI
@@ -981,15 +1042,17 @@ function singleAfterPlayerAction() {
 // 联机同步
 // =========================
 
+
 async function saveOnlineGame() {
   if (appMode !== 'online' || !roomId) return
 
   const nextGame = normalizeGame(game)
-  nextGame.actionSeq += 1
+  nextGame.actionSeq = Number(nextGame.actionSeq || 0) + 1
 
   game = nextGame
+  localGameActionSeq = nextGame.actionSeq
 
-  render()
+  requestRender()
 
   await window.LiluOnline.updateRoom(roomId, {
     game: nextGame,
@@ -1027,7 +1090,15 @@ async function createOnlineRoom() {
       roomData = data
 
       if (data && data.game) {
-        game = normalizeGame(data.game)
+        const incomingGame = normalizeGame(data.game)
+        const incomingSeq = Number(incomingGame.actionSeq || 0)
+        const currentSeq = Number(game && game.actionSeq || 0)
+
+        // 如果本机刚写入了较新的状态，忽略旧轮询，避免卡片短暂消失。
+        if (incomingSeq >= currentSeq || incomingSeq >= localGameActionSeq) {
+          game = incomingGame
+          localGameActionSeq = Math.max(localGameActionSeq, incomingSeq)
+        }
       }
 
       if (data && data.status === 'playing') {
@@ -1080,7 +1151,15 @@ async function joinOnlineRoom() {
       roomData = data
 
       if (data && data.game) {
-        game = normalizeGame(data.game)
+        const incomingGame = normalizeGame(data.game)
+        const incomingSeq = Number(incomingGame.actionSeq || 0)
+        const currentSeq = Number(game && game.actionSeq || 0)
+
+        // 如果本机刚写入了较新的状态，忽略旧轮询，避免卡片短暂消失。
+        if (incomingSeq >= currentSeq || incomingSeq >= localGameActionSeq) {
+          game = incomingGame
+          localGameActionSeq = Math.max(localGameActionSeq, incomingSeq)
+        }
       }
 
       if (data && data.status === 'playing') {
@@ -1176,7 +1255,9 @@ async function maybeStartOnlineGame() {
     latestGame.message = '双方已准备：早餐起手阶段，双方各抽2张'
     latestGame.mealIndex = 0
     latestGame.turn = null
+    latestGame.actionSeq = Number(latestGame.actionSeq || 0) + 1
     resetMealState(latestGame)
+    localGameActionSeq = latestGame.actionSeq
 
     await window.LiluOnline.updateRoom(roomId, {
       status: 'playing',
@@ -1206,6 +1287,37 @@ function leaveToHome() {
   game = createGame('single')
   message = ''
   render()
+}
+
+// =========================
+// 渲染节流与图片预加载
+// =========================
+
+let renderScheduled = false
+
+function requestRender() {
+  if (renderScheduled) return
+  renderScheduled = true
+
+  const runner = () => {
+    renderScheduled = false
+    render()
+  }
+
+  if (typeof window !== 'undefined' && window.requestAnimationFrame) {
+    window.requestAnimationFrame(runner)
+  } else {
+    setTimeout(runner, 16)
+  }
+}
+
+function preloadGameImages() {
+  const srcs = []
+
+  Object.keys(CARD_IMAGE_PATHS).forEach(key => srcs.push(CARD_IMAGE_PATHS[key]))
+  Object.keys(CARD_BACK_PATHS).forEach(key => srcs.push(CARD_BACK_PATHS[key]))
+
+  srcs.forEach(src => getImage(src))
 }
 
 // =========================
@@ -1303,12 +1415,12 @@ function getImage(src) {
 
   img.onload = () => {
     img.loaded = true
-    render()
+    requestRender()
   }
 
   img.onerror = () => {
     img.failed = true
-    render()
+    requestRender()
   }
 
   img.src = src
@@ -1455,13 +1567,26 @@ function getDisplayPlayerIds() {
   }
 }
 
+
 function drawPlayerPanel(pid, label, x, y, w, h, isOpponent) {
   const player = game.players[pid]
   const meal = getMeal()
+
+  const hiddenForOpponent = isOpponent && game.phase !== 'meal_result' && game.phase !== 'day_result'
+
+  const displayCards = safeArray(player.cards).map(card => {
+    const next = { ...card }
+
+    // 对方视角：底牌必须显示背面，不能直接看到。
+    if (hiddenForOpponent && next.privateCard) {
+      next.hidden = true
+    }
+
+    return next
+  })
+
   const total = calcCardsKcal(player.cards)
-  const visibleTotal = isOpponent && game.phase !== 'meal_result' && game.phase !== 'day_result'
-    ? getVisibleKcal(player.cards)
-    : total
+  const visibleTotal = hiddenForOpponent ? getVisibleKcal(displayCards) : total
 
   const bg = isOpponent ? '#EFE9DF' : '#FFFFFF'
   const status = player.busted
@@ -1479,7 +1604,7 @@ function drawPlayerPanel(pid, label, x, y, w, h, isOpponent) {
   drawText(label, x + 16, y + 12, 24, '#111', 'left', 'bold')
   drawText(status, x + 76, y + 18, 14, player.busted ? '#E94335' : '#111', 'left', 'bold')
 
-  const kcalText = isOpponent && game.phase !== 'meal_result' && game.phase !== 'day_result'
+  const kcalText = hiddenForOpponent
     ? `明牌 ${visibleTotal} kcal`
     : `${total}/${meal.threshold} kcal`
 
@@ -1487,7 +1612,7 @@ function drawPlayerPanel(pid, label, x, y, w, h, isOpponent) {
   drawText(`外卖 ${game.records[pid].dayOrdersUsed}/${TOTAL_ORDERS_PER_DAY}`, x + 16, y + 44, 13, '#666', 'left', 'bold')
   drawText(`全日总热量 ${getDayTotalKcal(game, pid) + (game.phase === 'meal_result' || game.phase === 'day_result' ? 0 : total)}`, x + 118, y + 44, 13, '#111', 'left', 'bold')
 
-  let cardsToDraw = player.cards
+  let cardsToDraw = displayCards
 
   if (game.phase === 'night_picking' && safeArray(player.nightChoices).length > 0) {
     cardsToDraw = safeArray(player.nightChoices).map((type, index) => ({
@@ -1590,6 +1715,7 @@ function drawGameScreen() {
   drawActionButtons()
 }
 
+
 function drawMealResult() {
   const result = game.lastMealResult
 
@@ -1599,18 +1725,51 @@ function drawMealResult() {
     return
   }
 
+  const selfId = getSelfId()
+  const oppId = otherPlayer(selfId)
+
+  const selfTotal = selfId === 'p1' ? result.p1Total : result.p2Total
+  const oppTotal = oppId === 'p1' ? result.p1Total : result.p2Total
+  const selfPoint = getMealPoint(game, selfId, result.mealIndex)
+  const oppPoint = getMealPoint(game, oppId, result.mealIndex)
+  const selfMealWinText = result.winner === null
+    ? '本餐平局'
+    : result.winner === selfId
+      ? '本餐你赢了'
+      : '本餐你输了'
+
   drawText(`${result.mealName}结算`, 24, SAFE_TOP + 8, 28, '#111', 'left', 'bold')
-  drawText(result.resultText, 24, SAFE_TOP + 46, 15, '#E94335', 'left', 'bold')
-  drawText(result.scoreText, W - 24, SAFE_TOP + 46, 15, '#111', 'right', 'bold')
+  drawText(result.scoreText, W - 24, SAFE_TOP + 16, 14, '#111', 'right', 'bold')
 
-  const panelH = Math.floor((H - SAFE_TOP - 170) / 2)
-  const topY = SAFE_TOP + 76
+  // 中间结算摘要
+  const summaryY = SAFE_TOP + 50
+  drawRoundRect(20, summaryY, W - 40, 92, 20, '#FFF6E8', '#111', 3)
+  drawText(selfMealWinText, W / 2, summaryY + 12, 22, result.winner === selfId ? '#E94335' : '#111', 'center', 'bold')
+  drawText(`本餐热量：你 ${selfTotal} kcal｜对方 ${oppTotal} kcal`, W / 2, summaryY + 42, 13, '#111', 'center', 'bold')
+  drawText(`本餐点数：你 +${selfPoint}｜对方 +${oppPoint}    累计小局：你 ${getMealTotalPoint(game, selfId)} : ${getMealTotalPoint(game, oppId)} 对方`, W / 2, summaryY + 62, 12, '#555', 'center', 'bold')
 
-  drawResultPlayer('对方外卖', getOpponentId(), topY, panelH)
-  drawResultPlayer('你的外卖', getSelfId(), topY + panelH + 10, panelH)
+  const readyY = summaryY + 76
+  if (appMode === 'online') {
+    const nextReady = game.nextReady || { p1: false, p2: false }
+    const statusText = `进入下一局确认：你 ${nextReady[selfId] ? '已确认' : '未确认'}｜对方 ${nextReady[oppId] ? '已确认' : '未确认'}`
+    drawText(statusText, W / 2, summaryY + 76, 11, '#E94335', 'center', 'bold')
+  }
 
-  const btnText = game.mealIndex >= 3 ? '进入今日结算' : `进入${meals[game.mealIndex + 1].name}`
-  addButton('next', btnText, 24, H - SAFE_BOTTOM - 72, W - 48, 58, '#111', '#fff', 22)
+  const panelH = Math.floor((H - SAFE_TOP - 260) / 2)
+  const topY = SAFE_TOP + 154
+
+  drawResultPlayer('对方外卖', oppId, topY, panelH)
+  drawResultPlayer('你的外卖', selfId, topY + panelH + 10, panelH)
+
+  const nextReady = game.nextReady || { p1: false, p2: false }
+  const nextName = game.mealIndex >= 3 ? '今日结算' : meals[game.mealIndex + 1].name
+
+  if (appMode === 'online') {
+    const alreadyReady = Boolean(nextReady[selfId])
+    addButton(alreadyReady ? 'noop' : 'next', alreadyReady ? `已确认，等待对方` : `确认进入${nextName}`, 24, H - SAFE_BOTTOM - 72, W - 48, 58, '#111', '#fff', 19)
+  } else {
+    addButton('next', `进入${nextName}`, 24, H - SAFE_BOTTOM - 72, W - 48, 58, '#111', '#fff', 22)
+  }
 }
 
 function drawResultPlayer(title, pid, y, h) {
@@ -1633,20 +1792,33 @@ function drawResultPlayer(title, pid, y, h) {
   drawCards(cards, 38, y + 96, W - 76, h - 110)
 }
 
-function drawDayResult() {
-  drawText('今日结算', 24, SAFE_TOP + 8, 30, '#111', 'left', 'bold')
 
+function drawDayResult() {
   const selfId = getSelfId()
   const oppId = otherPlayer(selfId)
   const selfPoint = getFinalPoint(game, selfId)
   const oppPoint = getFinalPoint(game, oppId)
 
-  drawRoundRect(20, SAFE_TOP + 56, W - 40, 112, 22, '#FFFFFF', '#111', 3)
-  drawText(`你 ${selfPoint} : ${oppPoint} 对手`, W / 2, SAFE_TOP + 76, 30, '#111', 'center', 'bold')
-  drawText(`你全日热量：${getDayTotalKcal(game, selfId)} kcal`, 38, SAFE_TOP + 120, 14, '#111', 'left', 'bold')
-  drawText(`对手：${getDayTotalKcal(game, oppId)} kcal`, W - 38, SAFE_TOP + 120, 14, '#111', 'right', 'bold')
+  let finalText = '平局'
+  let finalSubText = '双方今天吃得不相上下'
 
-  let y = SAFE_TOP + 190
+  if (selfPoint > oppPoint) {
+    finalText = '恭喜你赢了！'
+    finalSubText = '你赢得了这一整局'
+  } else if (selfPoint < oppPoint) {
+    finalText = '你输了'
+    finalSubText = '对方赢得了这一整局'
+  }
+
+  drawText('今日结算', 24, SAFE_TOP + 8, 30, '#111', 'left', 'bold')
+
+  drawRoundRect(20, SAFE_TOP + 50, W - 40, 126, 22, '#FFFFFF', '#111', 3)
+  drawText(finalText, W / 2, SAFE_TOP + 68, 30, selfPoint > oppPoint ? '#E94335' : '#111', 'center', 'bold')
+  drawText(finalSubText, W / 2, SAFE_TOP + 106, 14, '#555', 'center', 'bold')
+  drawText(`你 ${selfPoint} : ${oppPoint} 对手`, W / 2, SAFE_TOP + 128, 24, '#111', 'center', 'bold')
+  drawText(`全日热量：你 ${getDayTotalKcal(game, selfId)} kcal｜对手 ${getDayTotalKcal(game, oppId)} kcal`, W / 2, SAFE_TOP + 154, 12, '#555', 'center', 'bold')
+
+  let y = SAFE_TOP + 192
   for (let i = 0; i < meals.length; i++) {
     const meal = meals[i]
     const selfRaw = game.records[selfId].rawMealKcal[i]
@@ -1670,7 +1842,14 @@ function drawDayResult() {
     y += 72
   }
 
-  addButton('restart_home', '返回首页', 24, H - SAFE_BOTTOM - 72, W - 48, 58, '#111', '#fff', 22)
+  if (appMode === 'online') {
+    const ready = game.replayReady || { p1: false, p2: false }
+    const statusText = `下一整局准备：你 ${ready[selfId] ? '已准备' : '未准备'}｜对方 ${ready[oppId] ? '已准备' : '未准备'}`
+    drawText(statusText, W / 2, H - SAFE_BOTTOM - 92, 13, '#E94335', 'center', 'bold')
+    addButton(ready[selfId] ? 'noop' : 'replay_ready', ready[selfId] ? '已准备，等待对方' : '准备下一局', 24, H - SAFE_BOTTOM - 72, W - 48, 58, '#111', '#fff', 22)
+  } else {
+    addButton('restart_home', '返回首页', 24, H - SAFE_BOTTOM - 72, W - 48, 58, '#111', '#fff', 22)
+  }
 }
 
 // =========================
@@ -1776,13 +1955,22 @@ async function handleAction(id) {
   }
 
   if (id === 'next') {
-    applyNext(game)
+    applyNext(game, selfId)
 
     if (appMode === 'online') await saveOnlineGame()
     else {
       if (game.phase === 'opening') aiOpeningIfNeeded(game)
       render()
     }
+
+    return
+  }
+
+  if (id === 'replay_ready') {
+    applyReplayReady(selfId)
+
+    if (appMode === 'online') await saveOnlineGame()
+    else render()
 
     return
   }
@@ -1810,4 +1998,5 @@ canvas.addEventListener('mousedown', event => {
   onPointer(event.clientX, event.clientY)
 })
 
+preloadGameImages()
 render()
