@@ -1,5 +1,5 @@
 // game.js
-// 利禄卡 Online v2.7 联机同步防卡住版
+// 利禄卡 Online v2.8 首页与结算UI优化版
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -122,6 +122,12 @@ let startOverlayUntil = 0
 let localGameActionSeq = 0
 let pendingWriteUntil = 0
 let pendingActionId = ''
+let rulesScroll = 0
+let rulesMaxScroll = 0
+let rulesTouchDragging = false
+let rulesTouchLastY = 0
+const buttonPulse = {}
+const BUTTON_PULSE_MS = 160
 
 let game = createGame('single')
 
@@ -1579,11 +1585,30 @@ function wrapText(text, x, y, maxWidth, lineHeight, size, color, weight, maxLine
   return yy + lineHeight
 }
 
+
 function addButton(id, text, x, y, w, h, fill, color, fontSize) {
   buttons.push({ id, x, y, w, h })
-  drawRoundRect(x + 4, y + 5, w, h, 14, '#111', null, 0)
-  drawRoundRect(x, y, w, h, 14, fill || '#111', '#111', 2.5)
-  drawText(text, x + w / 2, y + h / 2 - (fontSize || 18) / 2, fontSize || 18, color || '#fff', 'center', 'bold')
+
+  const now = Date.now()
+  const pulseStart = buttonPulse[id] || 0
+  const elapsed = now - pulseStart
+  let scale = 1
+
+  if (elapsed >= 0 && elapsed < BUTTON_PULSE_MS) {
+    const t = elapsed / BUTTON_PULSE_MS
+    scale = 1 + 0.055 * Math.sin(Math.PI * t)
+  }
+
+  const cx = x + w / 2
+  const cy = y + h / 2
+  const sx = cx - (w * scale) / 2
+  const sy = cy - (h * scale) / 2
+  const sw = w * scale
+  const sh = h * scale
+
+  drawRoundRect(sx + 4, sy + 5, sw, sh, 14, '#111', null, 0)
+  drawRoundRect(sx, sy, sw, sh, 14, fill || '#111', '#111', 2.5)
+  drawText(text, cx, cy - (fontSize || 18) / 2, fontSize || 18, color || '#fff', 'center', 'bold')
 }
 
 function hitButton(x, y) {
@@ -1703,44 +1728,95 @@ function drawCards(cards, x, y, areaW, areaH) {
 // 画面
 // =========================
 
+
 function drawHome() {
   const panelX = 24
-  const panelY = SAFE_TOP + 34
+  const panelY = SAFE_TOP + 26
   const panelW = W - 48
-  const panelH = H - panelY - 330
+  const bottomButtonsH = 172
+  const panelH = Math.max(360, H - panelY - bottomButtonsH - SAFE_BOTTOM - 18)
 
   drawRoundRect(-40, H - 220, 160, 160, 36, '#A9F0D1', null, 0)
   drawRoundRect(W - 92, SAFE_TOP + 90, 130, 130, 32, '#FF9BB4', null, 0)
 
   drawRoundRect(panelX, panelY, panelW, panelH, 28, '#FFFFFF', '#111', 4)
-  drawText('利禄卡', W / 2, panelY + 22, 46, '#111', 'center', 'bold')
-  drawText('LILU CARDS', W / 2, panelY + 80, 16, '#555', 'center', 'bold')
-
-  drawRoundRect(W / 2 - 94, panelY + 116, 188, 40, 18, '#111', null, 0)
-  drawText('卡路里外卖对战', W / 2, panelY + 126, 17, '#FFE169', 'center', 'bold')
 
   if (!rulesExpanded) {
-    drawText('我的嘴，就是秤。', W / 2, panelY + 190, 28, '#111', 'center', 'bold')
-    drawText('单机 / 开房间 / 加入房间', W / 2, panelY + 232, 15, '#555', 'center', 'bold')
+    drawText('利禄卡', W / 2, panelY + 28, 48, '#111', 'center', 'bold')
+    drawText('LILU CARDS', W / 2, panelY + 90, 16, '#555', 'center', 'bold')
+
+    drawRoundRect(W / 2 - 94, panelY + 126, 188, 40, 18, '#111', null, 0)
+    drawText('卡路里外卖对战', W / 2, panelY + 136, 17, '#FFE169', 'center', 'bold')
+
+    drawText('我的嘴，就是秤。', W / 2, panelY + 212, 28, '#111', 'center', 'bold')
+    drawText('单机 / 开房间 / 加入房间', W / 2, panelY + 254, 15, '#555', 'center', 'bold')
+
+    const ruleBtnW = Math.min(panelW - 64, 210)
+    addButton('rules_toggle', '查看游戏规则', W / 2 - ruleBtnW / 2, panelY + panelH - 64, ruleBtnW, 42, '#FFFFFF', '#111', 16)
   } else {
-    const textX = panelX + 22
-    let textY = panelY + 160
-    const fs = 12
-    const lh = 17
-    drawText('稳定流程版规则', textX, textY, 20, '#111', 'left', 'bold')
-    textY += 26
-    textY = wrapText('1. 双方准备后开始；每餐先各抽2张起手牌，不分先后。', textX, textY, panelW - 44, lh, fs, '#333', 'bold', 2)
-    textY = wrapText('2. 早餐随机先手，午餐换先手，晚餐换回，夜宵不分先后。', textX, textY + 2, panelW - 44, lh, fs, '#333', 'bold', 2)
-    textY = wrapText('3. 点餐阶段明确显示“你的点餐回合”或“对方点餐回合”。', textX, textY + 2, panelW - 44, lh, fs, '#333', 'bold', 2)
-    wrapText('4. 双方结束后自动进入本餐结算，显示双方点了什么和热量。', textX, textY + 2, panelW - 44, lh, fs, '#333', 'bold', 3)
+    drawText('游戏规则', panelX + 24, panelY + 20, 28, '#111', 'left', 'bold')
+    addButton('rules_toggle', '收起', panelX + panelW - 88, panelY + 18, 58, 34, '#111', '#fff', 14)
+
+    const viewX = panelX + 24
+    const viewY = panelY + 66
+    const viewW = panelW - 48
+    const viewH = panelH - 88
+
+    const lines = [
+      '1. 双方准备后开局，早餐 / 午餐 / 晚餐 / 夜宵共 4 小局。',
+      '2. 每局先进入起手阶段，双方各抽 2 张：第 1 张是底牌，第 2 张是明牌；起手不消耗外卖次数。',
+      '3. 早餐起手完成后随机先手；午餐自动换另一方先手；晚餐换回早餐先手方。',
+      '4. 点餐阶段轮流操作。轮到你时，可选择 荤 / 素 / 主食 / 甜点，或点击收手。',
+      '5. 对方只有底牌未知，其余明牌可见；对方热量显示为「? + 明牌热量」。',
+      '6. 爆牌不会立刻摊牌，你还可以继续点外卖迷惑对方；只有主动收手才结束。',
+      '7. 双方都收手后进入本餐结算，公开双方全部外卖、热量、爆牌情况和胜负。',
+      '8. 夜宵不分先后，双方用剩余外卖次数选择搭配；双方选完后点击展示夜宵再结算。',
+      '9. 四局结束后进入今日结算，比分更高者获胜；平局则双方都很会吃。',
+      '10. 联机结束后不会退出房间，双方可继续准备下一整局。'
+    ]
+
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(viewX, viewY, viewW, viewH)
+    ctx.clip()
+
+    let yy = viewY - rulesScroll
+    const startY = yy
+
+    lines.forEach(line => {
+      yy = wrapText(line, viewX, yy, viewW, 18, 12, '#333', 'bold', 4)
+      yy += 8
+    })
+
+    const contentH = yy - startY
+    rulesMaxScroll = Math.max(0, contentH - viewH + 18)
+    rulesScroll = Math.max(0, Math.min(rulesScroll, rulesMaxScroll))
+
+    ctx.restore()
+
+    if (rulesMaxScroll > 0) {
+      const barH = Math.max(28, viewH * viewH / (contentH || viewH))
+      const barY = viewY + (viewH - barH) * (rulesScroll / rulesMaxScroll)
+      drawRoundRect(viewX + viewW + 6, barY, 4, barH, 3, '#111', null, 0)
+      drawText('上下滑动', W / 2, panelY + panelH - 18, 10, '#777', 'center', 'bold')
+    }
   }
 
-  addButton('rules_toggle', rulesExpanded ? '收起规则' : '游戏规则', 32, H - SAFE_BOTTOM - 282, W - 64, 42, '#fff', '#111', 16)
-  addButton('single_start', '单机游戏', 32, H - SAFE_BOTTOM - 226, W - 64, 52, '#111', '#fff', 22)
-  addButton('online_create', '开房间', 32, H - SAFE_BOTTOM - 166, W - 64, 52, '#FFE169', '#111', 22)
-  addButton('online_join', '加入房间', 32, H - SAFE_BOTTOM - 106, W - 64, 52, '#9EDBFF', '#111', 22)
+  const bottomY = H - SAFE_BOTTOM - 154
+  addButton('single_start', '单机游戏', 32, bottomY, W - 64, 54, '#111', '#fff', 22)
 
-  if (message) wrapText(message, 32, H - SAFE_BOTTOM - 46, W - 64, 16, 12, '#E94335', 'bold', 2)
+  const gap = 12
+  const halfW = (W - 64 - gap) / 2
+  addButton('online_create', '开房间', 32, bottomY + 68, halfW, 54, '#FFE169', '#111', 20)
+  addButton('online_join', '加入房间', 32 + halfW + gap, bottomY + 68, halfW, 54, '#9EDBFF', '#111', 20)
+
+  if (message) wrapText(message, 32, H - SAFE_BOTTOM - 24, W - 64, 14, 11, '#E94335', 'bold', 1)
+}
+
+
+function drawHomeMiniButton() {
+  if (appMode !== 'single') return
+  addButton('home', '首页', W - 74, SAFE_TOP + 2, 54, 30, '#FFFFFF', '#111', 13)
 }
 
 function drawTopBadge() {
@@ -1845,19 +1921,36 @@ function drawPlayerPanel(pid, label, x, y, w, h, isOpponent) {
   drawCards(cardsToDraw, x + 14, y + 72, w - 28, h - 86)
 }
 
+
 function drawCenterPanel(x, y, w, h) {
   const meal = getMeal()
+  const selfId = getSelfId()
+  const selfTotal = calcCardsKcal(game.players[selfId].cards)
+  const ratio = Math.max(0, Math.min(1, selfTotal / meal.threshold))
+
   drawRoundRect(x, y, w, h, 18, '#FFF6E8', '#111', 3)
 
   drawText(`${game.mealIndex + 1}/4  ${meal.name}`, x + 16, y + 10, 20, '#111', 'left', 'bold')
 
-  const badgeW = 130
-  drawRoundRect(x + w - badgeW - 12, y + 8, badgeW, 28, 14, '#FF4A3D', '#111', 2)
-  drawText(`警戒线 ${meal.threshold} kcal`, x + w - badgeW / 2 - 12, y + 15, 12, '#fff', 'center', 'bold')
+  const barX = x + w - 164
+  const barY = y + 12
+  const barW = 146
+  const barH = 24
 
-  const hint = getActionHint(game, getSelfId())
-  wrapText(hint, x + 16, y + 42, w - 32, 18, 13, '#333', 'bold', 2)
+  drawRoundRect(barX, barY, barW, barH, 13, '#FFFFFF', '#111', 2)
+  const fillW = Math.max(6, barW * ratio)
+  const fillColor = selfTotal >= meal.threshold
+    ? '#E94335'
+    : ratio > 0.78
+      ? '#FF7A3D'
+      : '#FFE169'
+  drawRoundRect(barX, barY, fillW, barH, 13, fillColor, null, 0)
+  drawText(`警戒线 ${meal.threshold}`, barX + barW / 2, barY + 6, 11, '#111', 'center', 'bold')
+
+  const hint = getActionHint(game, selfId)
+  wrapText(hint, x + 16, y + 44, w - 32, 18, 13, '#333', 'bold', 2)
 }
+
 
 
 
@@ -1872,7 +1965,6 @@ function drawActionButtons() {
   const smallH = (72 - smallGap) / 2
 
   const selfId = getSelfId()
-  const oppId = otherPlayer(selfId)
 
   if (appMode === 'online' && (!roomData || roomData.status === 'lobby' || game.phase === 'lobby')) {
     addButton('noop', '荤', leftX, y, smallW, smallH, '#ddd', '#555', 18)
@@ -1898,11 +1990,6 @@ function drawActionButtons() {
   const canAct = canPlayerAct(game, selfId)
   const disabledFill = '#ddd'
   const disabledColor = '#666'
-
-  // v2.6：轮到自己时不再出现红色提示；只在等待对方时强化说明。
-  if (game.phase === 'meal_playing' && game.turn === oppId && !game.players[selfId].stood) {
-    drawText('对方点餐回合，请等待对方操作', W / 2, y - 24, 13, '#E94335', 'center', 'bold')
-  }
 
   addButton(canAct ? 'draw_meat' : 'noop', '荤', leftX, y, smallW, smallH, canAct ? TYPE_COLORS['荤'] : disabledFill, canAct ? '#111' : disabledColor, 18)
   addButton(canAct ? 'draw_veg' : 'noop', '素', leftX + smallW + smallGap, y, smallW, smallH, canAct ? TYPE_COLORS['素'] : disabledFill, canAct ? '#111' : disabledColor, 18)
@@ -1931,12 +2018,14 @@ function drawActionButtons() {
   if (standSub) drawText(standSub, leftX + leftW + gap + rightW / 2, y + 50, 10, '#5C4300', 'center', 'bold')
 }
 
+
 function drawGameScreen() {
   drawTopBadge()
+  drawHomeMiniButton()
 
   const topY = SAFE_TOP + (appMode === 'online' ? 32 : 0)
   const actionY = H - SAFE_BOTTOM - 94
-  const centerH = 78
+  const centerH = 86
   const gap = 8
   let zoneH = Math.floor((actionY - topY - centerH - gap * 2 - 8) / 2)
   zoneH = Math.max(184, Math.min(245, zoneH))
@@ -1964,6 +2053,7 @@ function applyRevealNight(g) {
   g.actionSeq += 1
 }
 
+
 function drawWaitingOpponentFloat() {
   if (appMode !== 'online') return
   if (game.phase !== 'meal_playing') return
@@ -1974,26 +2064,28 @@ function drawWaitingOpponentFloat() {
   if (game.turn !== oppId) return
   if (game.players[selfId] && game.players[selfId].stood) return
 
-  const boxW = Math.min(W - 88, 260)
-  const boxH = 74
+  const boxW = Math.min(W - 96, 250)
+  const boxH = 66
   const x = (W - boxW) / 2
-  const y = Math.max(SAFE_TOP + 150, H * 0.44 - boxH / 2)
+  const y = SAFE_TOP + (appMode === 'online' ? 142 : 118)
 
   ctx.save()
-  ctx.globalAlpha = 0.96
+  ctx.globalAlpha = 0.97
   drawRoundRect(x + 5, y + 6, boxW, boxH, 22, '#111', null, 0)
   drawRoundRect(x, y, boxW, boxH, 22, '#FFF6E8', '#111', 3)
   ctx.restore()
 
-  drawText('对方点餐中', W / 2, y + 14, 25, '#E94335', 'center', 'bold')
-  drawText('请等待对方点外卖或收手', W / 2, y + 48, 12, '#333', 'center', 'bold')
+  drawText('对方点餐中', W / 2, y + 12, 23, '#111', 'center', 'bold')
+  drawText('请等待对方点外卖或收手', W / 2, y + 44, 11, '#555', 'center', 'bold')
 }
+
 
 function drawMealResult() {
   const result = game.lastMealResult
 
   if (!result) {
     drawText('本餐结算', 24, SAFE_TOP + 10, 28, '#111', 'left', 'bold')
+    drawHomeMiniButton()
     addButton('next', '继续', 24, H - SAFE_BOTTOM - 72, W - 48, 58, '#111', '#fff', 22)
     return
   }
@@ -2001,38 +2093,43 @@ function drawMealResult() {
   const selfId = getSelfId()
   const oppId = otherPlayer(selfId)
 
-  const selfTotal = selfId === 'p1' ? result.p1Total : result.p2Total
-  const oppTotal = oppId === 'p1' ? result.p1Total : result.p2Total
-  const selfPoint = getMealPoint(game, selfId, result.mealIndex)
-  const oppPoint = getMealPoint(game, oppId, result.mealIndex)
-  const selfMealWinText = result.winner === null
-    ? '本餐平局'
-    : result.winner === selfId
-      ? '本餐你赢了'
-      : '本餐你输了'
+  let verdict = '本餐平局'
+  let quote = '你俩都挺能装。'
 
-  drawText(`${result.mealName}结算`, 24, SAFE_TOP + 8, 28, '#111', 'left', 'bold')
-  drawText(result.scoreText, W - 24, SAFE_TOP + 16, 14, '#111', 'right', 'bold')
-
-  // 中间结算摘要
-  const summaryY = SAFE_TOP + 50
-  drawRoundRect(20, summaryY, W - 40, 92, 20, '#FFF6E8', '#111', 3)
-  drawText(selfMealWinText, W / 2, summaryY + 12, 22, result.winner === selfId ? '#E94335' : '#111', 'center', 'bold')
-  drawText(`本餐热量：你 ${selfTotal} kcal｜对方 ${oppTotal} kcal`, W / 2, summaryY + 42, 13, '#111', 'center', 'bold')
-  drawText(`本餐点数：你 +${selfPoint}｜对方 +${oppPoint}    累计小局：你 ${getMealTotalPoint(game, selfId)} : ${getMealTotalPoint(game, oppId)} 对方`, W / 2, summaryY + 62, 12, '#555', 'center', 'bold')
-
-  const readyY = summaryY + 76
-  if (appMode === 'online') {
-    const nextReady = game.nextReady || { p1: false, p2: false }
-    const statusText = `进入下一局确认：你 ${nextReady[selfId] ? '已确认' : '未确认'}｜对方 ${nextReady[oppId] ? '已确认' : '未确认'}`
-    drawText(statusText, W / 2, summaryY + 76, 11, '#E94335', 'center', 'bold')
+  if (result.winner === selfId) {
+    verdict = '本餐你赢了'
+    quote = '你很会吃啊，小朋友。'
+  } else if (result.winner === oppId) {
+    verdict = '本餐你输了'
+    quote = '你会吃有个屁用。'
   }
 
-  const panelH = Math.floor((H - SAFE_TOP - 260) / 2)
-  const topY = SAFE_TOP + 154
+  const selfScore = getMealTotalPoint(game, selfId)
+  const oppScore = getMealTotalPoint(game, oppId)
 
-  drawResultPlayer('对方外卖', oppId, topY, panelH)
-  drawResultPlayer('你的外卖', selfId, topY + panelH + 10, panelH)
+  drawHomeMiniButton()
+
+  const panelW = W - 48
+  const panelH = Math.min(360, H - SAFE_TOP - SAFE_BOTTOM - 150)
+  const x = 24
+  const y = SAFE_TOP + 58
+
+  drawRoundRect(x, y, panelW, panelH, 28, '#FFFFFF', '#111', 4)
+
+  drawText(`${result.mealName}结算`, W / 2, y + 34, 26, '#111', 'center', 'bold')
+  drawText(verdict, W / 2, y + 86, 38, result.winner === selfId ? '#E94335' : '#111', 'center', 'bold')
+  drawText(quote, W / 2, y + 138, 18, '#555', 'center', 'bold')
+
+  drawRoundRect(W / 2 - 92, y + 190, 184, 56, 24, '#FFF6E8', '#111', 3)
+  drawText(`你 ${selfScore} : ${oppScore} 对手`, W / 2, y + 207, 25, '#111', 'center', 'bold')
+
+  drawText(`当前：${result.mealName}`, W / 2, y + 270, 15, '#777', 'center', 'bold')
+
+  if (appMode === 'online') {
+    const nextReady = game.nextReady || { p1: false, p2: false }
+    const statusText = `确认状态：你 ${nextReady[selfId] ? '已确认' : '未确认'}｜对方 ${nextReady[oppId] ? '已确认' : '未确认'}`
+    drawText(statusText, W / 2, y + panelH - 40, 12, '#E94335', 'center', 'bold')
+  }
 
   const nextReady = game.nextReady || { p1: false, p2: false }
   const nextName = game.mealIndex >= 3 ? '今日结算' : meals[game.mealIndex + 1].name
@@ -2067,6 +2164,8 @@ function drawResultPlayer(title, pid, y, h) {
 
 
 function drawDayResult() {
+  drawHomeMiniButton()
+
   const selfId = getSelfId()
   const oppId = otherPlayer(selfId)
   const selfPoint = getFinalPoint(game, selfId)
@@ -2189,7 +2288,13 @@ async function handleAction(id) {
 
   if (id === 'rules_toggle') {
     rulesExpanded = !rulesExpanded
+    if (!rulesExpanded) rulesScroll = 0
     render()
+    return
+  }
+
+  if (id === 'home') {
+    leaveToHome()
     return
   }
 
@@ -2260,16 +2365,59 @@ async function handleAction(id) {
   }
 }
 
+
 function onPointer(clientX, clientY) {
   const id = hitButton(clientX, clientY)
   if (!id || id === 'noop') return
+
+  buttonPulse[id] = Date.now()
+  requestRender()
+  setTimeout(requestRender, BUTTON_PULSE_MS + 24)
+
   handleAction(id)
 }
 
 canvas.addEventListener('touchstart', event => {
   event.preventDefault()
   const touch = event.touches && event.touches[0]
-  if (touch) onPointer(touch.clientX, touch.clientY)
+  if (!touch) return
+
+  const id = hitButton(touch.clientX, touch.clientY)
+
+  if (id) {
+    onPointer(touch.clientX, touch.clientY)
+    return
+  }
+
+  if (appMode === 'home' && rulesExpanded) {
+    rulesTouchDragging = true
+    rulesTouchLastY = touch.clientY
+  }
+}, { passive: false })
+
+canvas.addEventListener('touchmove', event => {
+  if (!(appMode === 'home' && rulesExpanded && rulesTouchDragging)) return
+
+  event.preventDefault()
+  const touch = event.touches && event.touches[0]
+  if (!touch) return
+
+  const dy = rulesTouchLastY - touch.clientY
+  rulesTouchLastY = touch.clientY
+  rulesScroll = Math.max(0, Math.min(rulesMaxScroll, rulesScroll + dy))
+  requestRender()
+}, { passive: false })
+
+canvas.addEventListener('touchend', event => {
+  rulesTouchDragging = false
+}, { passive: false })
+
+canvas.addEventListener('wheel', event => {
+  if (!(appMode === 'home' && rulesExpanded)) return
+
+  event.preventDefault()
+  rulesScroll = Math.max(0, Math.min(rulesMaxScroll, rulesScroll + event.deltaY))
+  requestRender()
 }, { passive: false })
 
 canvas.addEventListener('mousedown', event => {
