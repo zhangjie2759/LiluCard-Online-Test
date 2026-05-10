@@ -1,5 +1,5 @@
 // game.js
-// 利禄卡 Online v2.8 首页与结算UI优化版
+// 利禄卡 Online v2.9 结算卡牌盘点与节奏优化版
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -128,6 +128,8 @@ let rulesTouchDragging = false
 let rulesTouchLastY = 0
 const buttonPulse = {}
 const BUTTON_PULSE_MS = 160
+let onlineActionLocked = false
+let onlineActionLockUntil = 0
 
 let game = createGame('single')
 
@@ -284,7 +286,7 @@ function isBusted(g, pid) {
 function isEnded(g, pid) {
   const p = g.players[pid]
   // v2.4：爆牌不再自动结束。
-  // 玩家可以继续叫外卖来迷惑对方，只有主动收手才算结束。
+  // 玩家可以继续叫外卖来迷惑对方，只有主动开吃才算结束。
   return Boolean(p.stood)
 }
 
@@ -379,6 +381,7 @@ function normalizeGame(g) {
     mealIndex: Number(src.mealIndex || 0),
     actionSeq: Number(src.actionSeq || 0),
     lastMealResult: src.lastMealResult || null,
+    mealResults: safeArray(src.mealResults).length ? safeArray(src.mealResults) : meals.map(() => null),
     firstTurnPlayer: src.firstTurnPlayer || null,
     turn: src.turn || null,
     phase: src.phase || 'lobby',
@@ -412,6 +415,7 @@ function createGame(mode) {
       p2: createRecord()
     },
     lastMealResult: null,
+    mealResults: meals.map(() => null),
     message: mode === 'single'
       ? '早餐开始：起手阶段，先抽2张起手牌'
       : '等待玩家加入并准备',
@@ -738,6 +742,9 @@ function settleMeal(g) {
     scoreText: `玩家1 ${getMealTotalPoint(g, 'p1')} : ${getMealTotalPoint(g, 'p2')} 玩家2`
   }
 
+  if (!g.mealResults) g.mealResults = meals.map(() => null)
+  g.mealResults[g.mealIndex] = clone(g.lastMealResult)
+
   g.phase = g.mealIndex >= meals.length - 1 ? 'meal_result' : 'meal_result'
   g.turn = null
   g.nextReady = { p1: false, p2: false }
@@ -795,18 +802,18 @@ function getActionHint(g, selfId) {
   }
 
   if (g.phase === 'meal_playing') {
-    if (self.stood) return '你已收手，等待对方继续点外卖或收手'
-    if (opp.stood && g.turn === selfId) return '对方已收手，你可以继续点外卖，或选择收手结算'
+    if (self.stood) return '你已开吃，等待对方继续点外卖或开吃'
+    if (opp.stood && g.turn === selfId) return '对方已开吃，你可以继续点外卖，或选择开吃结算'
 
     if (g.turn === selfId) {
       if (self.busted || isBusted(g, selfId)) {
-        return '你的点餐回合：你已爆牌，但可以继续叫外卖迷惑对方，或选择收手'
+        return '你的点餐回合：你已爆牌，但可以继续叫外卖迷惑对方，或选择开吃'
       }
 
       return '你的点餐回合：请选择外卖或收手'
     }
 
-    return '对方点餐回合：请等待对方点外卖或收手；对方底牌热量未知'
+    return '对方点餐回合：请等待对方点外卖或开吃；对方底牌热量未知'
   }
 
   if (g.phase === 'night_picking') {
@@ -875,7 +882,7 @@ function applyDraw(g, pid, type) {
 
     g.message = `${getPlayerName(pid)}点了一单${type}外卖`
 
-    // 只有双方都主动收手，才进入本餐结算。
+    // 只有双方都主动开吃，才进入本餐结算。
     if (g.players.p1.stood && g.players.p2.stood) {
       settleMeal(g)
     } else {
@@ -1145,7 +1152,7 @@ function runPostSyncTransitions(g) {
   if (g.phase === 'opening') {
     enterMealPlayingIfReady(g)
   } else if (g.phase === 'meal_playing') {
-    // v2.7：只有双方都主动收手后，才进入结算。
+    // v2.7：只有双方都主动开吃后，才进入结算。
     if (g.players.p1.stood && g.players.p2.stood) {
       settleMeal(g)
     }
@@ -1519,6 +1526,100 @@ function preloadGameImages() {
 }
 
 // =========================
+// 餐段背景与小卡绘制
+// =========================
+
+function getMealTheme(index) {
+  const i = Number(index || 0)
+  if (i === 0) {
+    return {
+      bg: '#FFF5C7',
+      panel: '#FFFDF0',
+      opponentPanel: '#F4EED7',
+      center: '#FFF2C5',
+      accent: '#FFE169',
+      text: '#111'
+    }
+  }
+
+  if (i === 1) {
+    return {
+      bg: '#FFD85E',
+      panel: '#FFF7D7',
+      opponentPanel: '#F1D890',
+      center: '#FFE98A',
+      accent: '#FFB53D',
+      text: '#111'
+    }
+  }
+
+  if (i === 2) {
+    return {
+      bg: '#17294C',
+      panel: '#F6F8FF',
+      opponentPanel: '#DCE5FF',
+      center: '#EAF0FF',
+      accent: '#4E77C8',
+      text: '#111'
+    }
+  }
+
+  return {
+    bg: '#101010',
+    panel: '#F7F1E8',
+    opponentPanel: '#D8D0C4',
+    center: '#EFE6DA',
+    accent: '#111',
+    text: '#111'
+  }
+}
+
+function getPageBg() {
+  if (appMode === 'home' || !game) return '#F7F1E8'
+  return getMealTheme(game.mealIndex).bg
+}
+
+function getMealCardsFromResult(result, pid) {
+  if (!result) return []
+  return pid === 'p1' ? safeArray(result.p1Cards) : safeArray(result.p2Cards)
+}
+
+function drawTinyCards(cards, x, y, areaW, areaH, maxSize) {
+  const list = safeArray(cards)
+  if (list.length === 0) {
+    drawText('无外卖', x, y + 8, 12, '#777', 'left', 'bold')
+    return
+  }
+
+  const gap = 3
+  let cardW = maxSize || 38
+  const perRow = Math.max(3, Math.floor((areaW + gap) / (cardW + gap)))
+
+  const rows = Math.ceil(list.length / perRow)
+  const maxH = Math.floor((areaH - gap * Math.max(0, rows - 1)) / rows)
+
+  let cardH = Math.min(Math.round(cardW * 1121 / 671), Math.max(34, maxH))
+  cardW = Math.round(cardH * 671 / 1121)
+
+  for (let i = 0; i < list.length; i++) {
+    const row = Math.floor(i / perRow)
+    const col = i % perRow
+    const yy = y + row * (cardH + gap)
+    if (yy + cardH > y + areaH) break
+    const card = { ...list[i], hidden: false }
+    drawCard(card, x + col * (cardW + gap), yy, cardW, cardH)
+  }
+}
+
+function drawCompactMealCards(title, cards, total, busted, x, y, w, h) {
+  drawRoundRect(x, y, w, h, 16, '#FFFFFF', '#111', 2.2)
+  drawText(title, x + 12, y + 10, 15, '#111', 'left', 'bold')
+  drawText(`${total} kcal${busted ? ' 爆' : ''}`, x + w - 12, y + 11, 13, busted ? '#E94335' : '#111', 'right', 'bold')
+  drawTinyCards(cards, x + 12, y + 34, w - 24, h - 42, 34)
+}
+
+
+// =========================
 // 绘图工具
 // =========================
 
@@ -1768,7 +1869,7 @@ function drawHome() {
       '3. 早餐起手完成后随机先手；午餐自动换另一方先手；晚餐换回早餐先手方。',
       '4. 点餐阶段轮流操作。轮到你时，可选择 荤 / 素 / 主食 / 甜点，或点击收手。',
       '5. 对方只有底牌未知，其余明牌可见；对方热量显示为「? + 明牌热量」。',
-      '6. 爆牌不会立刻摊牌，你还可以继续点外卖迷惑对方；只有主动收手才结束。',
+      '6. 爆牌不会立刻摊牌，你还可以继续点外卖迷惑对方；只有主动开吃才结束。',
       '7. 双方都收手后进入本餐结算，公开双方全部外卖、热量、爆牌情况和胜负。',
       '8. 夜宵不分先后，双方用剩余外卖次数选择搭配；双方选完后点击展示夜宵再结算。',
       '9. 四局结束后进入今日结算，比分更高者获胜；平局则双方都很会吃。',
@@ -1862,7 +1963,8 @@ function drawPlayerPanel(pid, label, x, y, w, h, isOpponent) {
   const total = calcCardsKcal(player.cards)
   const visibleTotal = hiddenForOpponent ? getVisibleKcal(displayCards) : total
 
-  const bg = isOpponent ? '#EFE9DF' : '#FFFFFF'
+  const theme = getMealTheme(game.mealIndex)
+  const bg = isOpponent ? theme.opponentPanel : theme.panel
 
   let status = '观察中'
 
@@ -1922,33 +2024,54 @@ function drawPlayerPanel(pid, label, x, y, w, h, isOpponent) {
 }
 
 
+
 function drawCenterPanel(x, y, w, h) {
   const meal = getMeal()
   const selfId = getSelfId()
   const selfTotal = calcCardsKcal(game.players[selfId].cards)
   const ratio = Math.max(0, Math.min(1, selfTotal / meal.threshold))
+  const theme = getMealTheme(game.mealIndex)
 
-  drawRoundRect(x, y, w, h, 18, '#FFF6E8', '#111', 3)
+  drawRoundRect(x, y, w, h, 18, theme.center, '#111', 3)
 
   drawText(`${game.mealIndex + 1}/4  ${meal.name}`, x + 16, y + 10, 20, '#111', 'left', 'bold')
 
-  const barX = x + w - 164
-  const barY = y + 12
-  const barW = 146
-  const barH = 24
+  const barX = x + w - 214
+  const barY = y + 15
+  const barW = 196
+  const barH = 28
+  const r = 14
 
-  drawRoundRect(barX, barY, barW, barH, 13, '#FFFFFF', '#111', 2)
-  const fillW = Math.max(6, barW * ratio)
+  ctx.save()
+  drawRoundRect(barX, barY, barW, barH, r, '#FFFFFF', null, 0)
+  ctx.beginPath()
+  ctx.moveTo(barX + r, barY)
+  ctx.lineTo(barX + barW - r, barY)
+  ctx.quadraticCurveTo(barX + barW, barY, barX + barW, barY + r)
+  ctx.lineTo(barX + barW, barY + barH - r)
+  ctx.quadraticCurveTo(barX + barW, barY + barH, barX + barW - r, barY + barH)
+  ctx.lineTo(barX + r, barY + barH)
+  ctx.quadraticCurveTo(barX, barY + barH, barX, barY + barH - r)
+  ctx.lineTo(barX, barY + r)
+  ctx.quadraticCurveTo(barX, barY, barX + r, barY)
+  ctx.closePath()
+  ctx.clip()
+
   const fillColor = selfTotal >= meal.threshold
     ? '#E94335'
     : ratio > 0.78
       ? '#FF7A3D'
       : '#FFE169'
-  drawRoundRect(barX, barY, fillW, barH, 13, fillColor, null, 0)
-  drawText(`警戒线 ${meal.threshold}`, barX + barW / 2, barY + 6, 11, '#111', 'center', 'bold')
+
+  ctx.fillStyle = fillColor
+  ctx.fillRect(barX, barY, barW * ratio, barH)
+  ctx.restore()
+
+  drawRoundRect(barX, barY, barW, barH, r, null, '#111', 3)
+  drawText(`警戒线 ${meal.threshold}`, barX + barW / 2, barY + 7, 12, '#111', 'center', 'bold')
 
   const hint = getActionHint(game, selfId)
-  wrapText(hint, x + 16, y + 44, w - 32, 18, 13, '#333', 'bold', 2)
+  wrapText(hint, x + 16, y + 48, w - 32, 18, 13, '#333', 'bold', 2)
 }
 
 
@@ -1996,7 +2119,7 @@ function drawActionButtons() {
   addButton(canAct ? 'draw_staple' : 'noop', '主食', leftX, y + smallH + smallGap, smallW, smallH, canAct ? TYPE_COLORS['主食'] : disabledFill, canAct ? '#111' : disabledColor, 18)
   addButton(canAct ? 'draw_dessert' : 'noop', '甜点', leftX + smallW + smallGap, y + smallH + smallGap, smallW, smallH, canAct ? TYPE_COLORS['甜点'] : disabledFill, canAct ? '#111' : disabledColor, 18)
 
-  let standText = '收手'
+  let standText = '开吃'
   let standSub = ''
   if (game.phase === 'opening') {
     standText = '起手中'
@@ -2006,7 +2129,7 @@ function drawActionButtons() {
     standSub = '选完后展示'
   } else if (game.phase === 'meal_playing') {
     if (game.turn === selfId) {
-      standText = '收手'
+      standText = '开吃'
       standSub = (game.players[selfId].busted || isBusted(game, selfId)) ? '结束并摊牌' : '确认热量'
     } else {
       standText = '等待对方'
@@ -2076,8 +2199,9 @@ function drawWaitingOpponentFloat() {
   ctx.restore()
 
   drawText('对方点餐中', W / 2, y + 12, 23, '#111', 'center', 'bold')
-  drawText('请等待对方点外卖或收手', W / 2, y + 44, 11, '#555', 'center', 'bold')
+  drawText('请等待对方点外卖或开吃', W / 2, y + 44, 11, '#555', 'center', 'bold')
 }
+
 
 
 function drawMealResult() {
@@ -2107,28 +2231,38 @@ function drawMealResult() {
   const selfScore = getMealTotalPoint(game, selfId)
   const oppScore = getMealTotalPoint(game, oppId)
 
+  const selfCards = getMealCardsFromResult(result, selfId)
+  const oppCards = getMealCardsFromResult(result, oppId)
+  const selfTotal = selfId === 'p1' ? result.p1Total : result.p2Total
+  const oppTotal = oppId === 'p1' ? result.p1Total : result.p2Total
+  const selfBusted = selfId === 'p1' ? result.p1Busted : result.p2Busted
+  const oppBusted = oppId === 'p1' ? result.p1Busted : result.p2Busted
+
   drawHomeMiniButton()
 
   const panelW = W - 48
-  const panelH = Math.min(360, H - SAFE_TOP - SAFE_BOTTOM - 150)
+  const panelH = Math.min(520, H - SAFE_TOP - SAFE_BOTTOM - 112)
   const x = 24
-  const y = SAFE_TOP + 58
+  const y = SAFE_TOP + 48
 
   drawRoundRect(x, y, panelW, panelH, 28, '#FFFFFF', '#111', 4)
 
-  drawText(`${result.mealName}结算`, W / 2, y + 34, 26, '#111', 'center', 'bold')
-  drawText(verdict, W / 2, y + 86, 38, result.winner === selfId ? '#E94335' : '#111', 'center', 'bold')
-  drawText(quote, W / 2, y + 138, 18, '#555', 'center', 'bold')
+  drawText(`${result.mealName}结算`, W / 2, y + 24, 24, '#111', 'center', 'bold')
+  drawText(verdict, W / 2, y + 62, 34, result.winner === selfId ? '#E94335' : '#111', 'center', 'bold')
+  drawText(quote, W / 2, y + 108, 16, '#555', 'center', 'bold')
 
-  drawRoundRect(W / 2 - 92, y + 190, 184, 56, 24, '#FFF6E8', '#111', 3)
-  drawText(`你 ${selfScore} : ${oppScore} 对手`, W / 2, y + 207, 25, '#111', 'center', 'bold')
+  drawRoundRect(W / 2 - 86, y + 138, 172, 44, 22, '#FFF6E8', '#111', 3)
+  drawText(`你 ${selfScore} : ${oppScore} 对手`, W / 2, y + 150, 22, '#111', 'center', 'bold')
 
-  drawText(`当前：${result.mealName}`, W / 2, y + 270, 15, '#777', 'center', 'bold')
+  const cardAreaY = y + 202
+  const cardPanelH = Math.max(108, Math.min(150, (panelH - 260) / 2))
+  drawCompactMealCards('对方外卖', oppCards, oppTotal, oppBusted, x + 16, cardAreaY, panelW - 32, cardPanelH)
+  drawCompactMealCards('你的外卖', selfCards, selfTotal, selfBusted, x + 16, cardAreaY + cardPanelH + 10, panelW - 32, cardPanelH)
 
   if (appMode === 'online') {
     const nextReady = game.nextReady || { p1: false, p2: false }
     const statusText = `确认状态：你 ${nextReady[selfId] ? '已确认' : '未确认'}｜对方 ${nextReady[oppId] ? '已确认' : '未确认'}`
-    drawText(statusText, W / 2, y + panelH - 40, 12, '#E94335', 'center', 'bold')
+    drawText(statusText, W / 2, y + panelH - 30, 12, '#E94335', 'center', 'bold')
   }
 
   const nextReady = game.nextReady || { p1: false, p2: false }
@@ -2163,6 +2297,7 @@ function drawResultPlayer(title, pid, y, h) {
 }
 
 
+
 function drawDayResult() {
   drawHomeMiniButton()
 
@@ -2184,34 +2319,51 @@ function drawDayResult() {
 
   drawText('今日结算', 24, SAFE_TOP + 8, 30, '#111', 'left', 'bold')
 
-  drawRoundRect(20, SAFE_TOP + 50, W - 40, 126, 22, '#FFFFFF', '#111', 3)
-  drawText(finalText, W / 2, SAFE_TOP + 68, 30, selfPoint > oppPoint ? '#E94335' : '#111', 'center', 'bold')
-  drawText(finalSubText, W / 2, SAFE_TOP + 106, 14, '#555', 'center', 'bold')
-  drawText(`你 ${selfPoint} : ${oppPoint} 对手`, W / 2, SAFE_TOP + 128, 24, '#111', 'center', 'bold')
-  drawText(`全日热量：你 ${getDayTotalKcal(game, selfId)} kcal｜对手 ${getDayTotalKcal(game, oppId)} kcal`, W / 2, SAFE_TOP + 154, 12, '#555', 'center', 'bold')
+  drawRoundRect(20, SAFE_TOP + 48, W - 40, 108, 22, '#FFFFFF', '#111', 3)
+  drawText(finalText, W / 2, SAFE_TOP + 62, 28, selfPoint > oppPoint ? '#E94335' : '#111', 'center', 'bold')
+  drawText(finalSubText, W / 2, SAFE_TOP + 96, 13, '#555', 'center', 'bold')
+  drawText(`你 ${selfPoint} : ${oppPoint} 对手`, W / 2, SAFE_TOP + 118, 22, '#111', 'center', 'bold')
+  drawText(`全日热量：你 ${getDayTotalKcal(game, selfId)} kcal｜对手 ${getDayTotalKcal(game, oppId)} kcal`, W / 2, SAFE_TOP + 142, 11, '#555', 'center', 'bold')
 
-  let y = SAFE_TOP + 192
+  const results = safeArray(game.mealResults)
+  let y = SAFE_TOP + 170
+  const bottomLimit = H - SAFE_BOTTOM - 104
+  const blockH = Math.max(82, Math.min(112, (bottomLimit - y - 18) / meals.length))
+
   for (let i = 0; i < meals.length; i++) {
     const meal = meals[i]
-    const selfRaw = game.records[selfId].rawMealKcal[i]
-    const oppRaw = game.records[oppId].rawMealKcal[i]
-    const selfBusted = selfRaw > meal.threshold
-    const oppBusted = oppRaw > meal.threshold
+    const res = results[i]
+
+    drawRoundRect(20, y, W - 40, blockH, 16, '#FFFFFF', '#111', 2)
+
+    drawText(meal.name, 34, y + 10, 17, '#111', 'left', 'bold')
+
+    if (!res) {
+      drawText('无记录', W / 2, y + 12, 13, '#777', 'center', 'bold')
+      y += blockH + 8
+      continue
+    }
+
+    const selfCards = getMealCardsFromResult(res, selfId)
+    const oppCards = getMealCardsFromResult(res, oppId)
+    const selfRaw = selfId === 'p1' ? res.p1Total : res.p2Total
+    const oppRaw = oppId === 'p1' ? res.p1Total : res.p2Total
+    const selfBusted = selfId === 'p1' ? res.p1Busted : res.p2Busted
+    const oppBusted = oppId === 'p1' ? res.p1Busted : res.p2Busted
     const selfP = getMealPoint(game, selfId, i)
     const oppP = getMealPoint(game, oppId, i)
 
-    drawRoundRect(20, y, W - 40, 62, 16, '#FFFFFF', '#111', 2)
-    drawText(meal.name, 36, y + 10, 18, '#111', 'left', 'bold')
-    drawText(`你 ${selfRaw}${selfBusted ? '爆' : ''}`, 96, y + 12, 14, selfBusted ? '#E94335' : '#111', 'left', 'bold')
-    drawText(`对手 ${oppRaw}${oppBusted ? '爆' : ''}`, 178, y + 12, 14, oppBusted ? '#E94335' : '#111', 'left', 'bold')
-    drawText(`${selfP}:${oppP}`, W - 38, y + 12, 16, '#E94335', 'right', 'bold')
+    drawText(`${selfP}:${oppP}`, W - 34, y + 10, 16, '#E94335', 'right', 'bold')
+    drawText(`你 ${selfRaw}${selfBusted ? '爆' : ''}｜对手 ${oppRaw}${oppBusted ? '爆' : ''}`, 92, y + 12, 12, '#333', 'left', 'bold')
 
-    const selfCombo = game.records[selfId].comboResults[i]
-    const oppCombo = game.records[oppId].comboResults[i]
-    const line = `你：${selfCombo ? selfCombo.name : selfBusted ? '爆牌' : '无'}｜对手：${oppCombo ? oppCombo.name : oppBusted ? '爆牌' : '无'}`
-    drawText(line, 36, y + 38, 12, '#555', 'left', 'bold')
+    const cardY = y + 34
+    const colW = (W - 76) / 2
+    drawText('对方', 34, cardY, 10, '#777', 'left', 'bold')
+    drawTinyCards(oppCards, 34, cardY + 14, colW, blockH - 50, 26)
+    drawText('你', 42 + colW, cardY, 10, '#777', 'left', 'bold')
+    drawTinyCards(selfCards, 42 + colW, cardY + 14, colW, blockH - 50, 26)
 
-    y += 72
+    y += blockH + 8
   }
 
   if (appMode === 'online') {
@@ -2250,10 +2402,11 @@ function drawOverlayIfNeeded() {
   ctx.restore()
 }
 
+
 function render() {
   buttons = []
   ctx.clearRect(0, 0, W, H)
-  ctx.fillStyle = '#F7F1E8'
+  ctx.fillStyle = getPageBg()
   ctx.fillRect(0, 0, W, H)
 
   if (appMode === 'home') {
@@ -2282,86 +2435,108 @@ function render() {
 // 点击事件
 // =========================
 
+
 async function handleAction(id) {
   const selfId = getSelfId()
+
+  const lockedActions = ['draw_meat', 'draw_veg', 'draw_staple', 'draw_dessert', 'stand', 'reveal_night', 'next', 'replay_ready', 'ready']
+  const shouldLock = appMode === 'online' && lockedActions.includes(id)
+
+  if (shouldLock && onlineActionLocked && Date.now() < onlineActionLockUntil) {
+    return
+  }
+
+  if (shouldLock) {
+    onlineActionLocked = true
+    onlineActionLockUntil = Date.now() + 900
+  }
+
   pendingActionId = id
 
-  if (id === 'rules_toggle') {
-    rulesExpanded = !rulesExpanded
-    if (!rulesExpanded) rulesScroll = 0
-    render()
-    return
-  }
-
-  if (id === 'home') {
-    leaveToHome()
-    return
-  }
-
-  if (id === 'single_start') {
-    appMode = 'single'
-    myPlayerId = 'p1'
-    game = createGame('single')
-    aiOpeningIfNeeded(game)
-    render()
-    return
-  }
-
-  if (id === 'online_create') {
-    await createOnlineRoom()
-    return
-  }
-
-  if (id === 'online_join') {
-    await joinOnlineRoom()
-    return
-  }
-
-  if (id === 'ready') {
-    await playerReady()
-    return
-  }
-
-  if (id === 'draw_meat') applyDraw(game, selfId, '荤')
-  if (id === 'draw_veg') applyDraw(game, selfId, '素')
-  if (id === 'draw_staple') applyDraw(game, selfId, '主食')
-  if (id === 'draw_dessert') applyDraw(game, selfId, '甜点')
-  if (id === 'stand') applyStand(game, selfId)
-  if (id === 'reveal_night') applyRevealNight(game)
-
-  if (['draw_meat', 'draw_veg', 'draw_staple', 'draw_dessert', 'stand', 'reveal_night'].includes(id)) {
-    singleAfterPlayerAction()
-
-    if (appMode === 'online') await saveOnlineGame()
-    else render()
-
-    return
-  }
-
-  if (id === 'next') {
-    applyNext(game, selfId)
-
-    if (appMode === 'online') await saveOnlineGame()
-    else {
-      if (game.phase === 'opening') aiOpeningIfNeeded(game)
+  try {
+    if (id === 'rules_toggle') {
+      rulesExpanded = !rulesExpanded
+      if (!rulesExpanded) rulesScroll = 0
       render()
+      return
     }
 
-    return
-  }
+    if (id === 'home') {
+      leaveToHome()
+      return
+    }
 
-  if (id === 'replay_ready') {
-    applyReplayReady(selfId)
+    if (id === 'single_start') {
+      appMode = 'single'
+      myPlayerId = 'p1'
+      game = createGame('single')
+      aiOpeningIfNeeded(game)
+      render()
+      return
+    }
 
-    if (appMode === 'online') await saveOnlineGame()
-    else render()
+    if (id === 'online_create') {
+      await createOnlineRoom()
+      return
+    }
 
-    return
-  }
+    if (id === 'online_join') {
+      await joinOnlineRoom()
+      return
+    }
 
-  if (id === 'restart_home') {
-    leaveToHome()
-    return
+    if (id === 'ready') {
+      await playerReady()
+      return
+    }
+
+    if (id === 'draw_meat') applyDraw(game, selfId, '荤')
+    if (id === 'draw_veg') applyDraw(game, selfId, '素')
+    if (id === 'draw_staple') applyDraw(game, selfId, '主食')
+    if (id === 'draw_dessert') applyDraw(game, selfId, '甜点')
+    if (id === 'stand') applyStand(game, selfId)
+    if (id === 'reveal_night') applyRevealNight(game)
+
+    if (['draw_meat', 'draw_veg', 'draw_staple', 'draw_dessert', 'stand', 'reveal_night'].includes(id)) {
+      singleAfterPlayerAction()
+
+      if (appMode === 'online') await saveOnlineGame()
+      else render()
+
+      return
+    }
+
+    if (id === 'next') {
+      applyNext(game, selfId)
+
+      if (appMode === 'online') await saveOnlineGame()
+      else {
+        if (game.phase === 'opening') aiOpeningIfNeeded(game)
+        render()
+      }
+
+      return
+    }
+
+    if (id === 'replay_ready') {
+      applyReplayReady(selfId)
+
+      if (appMode === 'online') await saveOnlineGame()
+      else render()
+
+      return
+    }
+
+    if (id === 'restart_home') {
+      leaveToHome()
+      return
+    }
+  } finally {
+    if (shouldLock) {
+      setTimeout(() => {
+        onlineActionLocked = false
+      }, 360)
+    }
   }
 }
 
