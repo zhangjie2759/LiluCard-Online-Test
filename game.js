@@ -1,5 +1,5 @@
 // game.js
-// 利禄卡 Online v3.3 白屏修复版：修复 resizeCanvas 初始化时机
+// 利禄卡 Online v3.4 卡牌显示与顶层按钮优化版
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -279,24 +279,24 @@ function toggleBgm() {
   requestRender()
 }
 
+
 function drawMusicButton() {
   let label = '音乐'
 
   if (bgmLoadFailed) {
     label = '音乐失败'
   } else if (!bgmEnabled) {
-    label = '音乐 关'
+    label = '音乐关'
   } else if (bgmStarted && bgm && !bgm.paused) {
-    label = '音乐 开'
+    label = '音乐开'
   } else {
-    label = '播放音乐'
+    label = '音乐'
   }
 
-  addButton('music_toggle', label, 16, SAFE_TOP + 2, 92, 30, '#FFFFFF', '#111', 12)
+  addButton('music_toggle', label, 12, SAFE_TOP + 4, 58, 24, '#FFFFFF', '#111', 10)
 
-  // 只在异常或未启动时显示小提示，避免正常游戏时占屏幕。
   if (bgmStatusText && (!bgmStarted || bgmLoadFailed)) {
-    drawText(bgmStatusText, 112, SAFE_TOP + 9, 10, bgmLoadFailed ? '#E94335' : '#777', 'left', 'bold')
+    drawText(bgmStatusText, 76, SAFE_TOP + 10, 9, bgmLoadFailed ? '#E94335' : '#777', 'left', 'bold')
   }
 }
 
@@ -1923,6 +1923,7 @@ const imageCache = {}
 
 
 
+
 function getImage(src) {
   if (!src) return null
 
@@ -1932,19 +1933,25 @@ function getImage(src) {
   const img = new Image()
   img.loaded = false
   img.failed = false
+  img.retryRaw = false
   img.decoding = 'async'
   img.loading = 'eager'
 
   img.onload = () => {
-    // v3.1：iPhone Safari / 微信内置浏览器里 decode() 偶尔不 resolve，
-    // 会导致图片其实下载完了但一直不显示。
-    // 所以 onload 后立即标记 loaded，不再等待 decode。
     img.loaded = true
     img.failed = false
     requestRender()
   }
 
   img.onerror = () => {
+    // 某些手机 WebView 可能会把带查询参数的图片请求缓存成失败。
+    // 第一次失败后，用原始路径再试一次。
+    if (!img.retryRaw) {
+      img.retryRaw = true
+      img.src = src
+      return
+    }
+
     img.loaded = false
     img.failed = true
     requestRender()
@@ -1956,6 +1963,7 @@ function getImage(src) {
   imageCache[cacheKey] = img
   return img
 }
+
 
 
 function drawCard(card, x, y, w, h) {
@@ -2001,39 +2009,15 @@ function drawCard(card, x, y, w, h) {
 
     if (!card.hidden) drawRoundRect(x, y, w, h, radius, null, '#111', 2)
 
-    // v3.0：卡牌缩小后，原图文字会难读；叠加一个轻量 kcal/name 标签。
-    if (!card.hidden) {
-      const badgeH = w < 42 ? 14 : 17
-      const badgeY = y + h - badgeH - 3
-      const badgeText = w < 42 ? `${card.kcal}` : `${card.kcal}kcal`
-
-      ctx.save()
-      ctx.globalAlpha = 0.92
-      drawRoundRect(x + 4, badgeY, w - 8, badgeH, 7, '#111', null, 0)
-      ctx.restore()
-      drawText(badgeText, x + w / 2, badgeY + (w < 42 ? 2 : 3), w < 42 ? 9 : 10, '#fff', 'center', 'bold')
-
-      if (w >= 46) {
-        const nameText = String(card.name || '').slice(0, 4)
-        ctx.save()
-        ctx.globalAlpha = 0.86
-        drawRoundRect(x + 4, y + 4, w - 8, 15, 7, '#FFFFFF', null, 0)
-        ctx.restore()
-        drawText(nameText, x + w / 2, y + 6, 9, '#111', 'center', 'bold')
-      }
-    }
-
-    if (card.privateCard && !card.hidden && w >= 48) {
-      drawRoundRect(x + 5, y + 22, 30, 16, 7, '#111', null, 0)
-      drawText('底牌', x + 20, y + 25, 9, '#fff', 'center', 'bold')
-    }
-
+    // v3.4：图片正常显示时，不再额外叠中文名/卡路里，避免干扰卡面设计。
     return
   }
 
+  // 图片没加载出来时，仍然给一个清晰占位，避免玩家完全不知道这张牌是什么。
   drawRoundRect(x, y, w, h, 10, TYPE_COLORS[type] || '#fff', '#111', 2)
-  drawText(card.hidden ? '背面' : String(card.name || '').slice(0, 4), x + w / 2, y + h / 2 - 12, 12, '#111', 'center', 'bold')
-  if (!card.hidden) drawText(`${card.kcal}kcal`, x + w / 2, y + h - 20, 11, '#111', 'center', 'bold')
+  drawText(card.hidden ? '背面' : String(card.name || '').slice(0, 4), x + w / 2, y + h / 2 - 14, Math.max(9, Math.min(12, w / 4)), '#111', 'center', 'bold')
+  if (!card.hidden) drawText(`${card.kcal}kcal`, x + w / 2, y + h / 2 + 4, Math.max(8, Math.min(11, w / 5)), '#111', 'center', 'bold')
+  if (img && img.failed) drawText('重试中', x + w / 2, y + h - 18, 9, '#E94335', 'center', 'bold')
 }
 
 
@@ -2149,13 +2133,13 @@ function drawHome() {
 
   if (message) wrapText(message, 32, H - SAFE_BOTTOM - 24, W - 64, 14, 11, '#E94335', 'bold', 1)
 
-  drawMusicButton()
 }
 
 
+
 function drawHomeMiniButton() {
-  if (appMode !== 'single') return
-  addButton('home', '首页', W - 74, SAFE_TOP + 2, 54, 30, '#FFFFFF', '#111', 13)
+  if (appMode === 'home') return
+  addButton('home', '首页', W - 56, SAFE_TOP + 4, 44, 24, '#FFFFFF', '#111', 10)
 }
 
 function drawTopBadge() {
@@ -2383,8 +2367,6 @@ function drawActionButtons() {
 
 function drawGameScreen() {
   drawTopBadge()
-  drawHomeMiniButton()
-  drawMusicButton()
 
   const isOnline = appMode === 'online'
   const topY = SAFE_TOP + (isOnline ? 34 : 4)
@@ -2457,9 +2439,7 @@ function drawMealResult() {
 
   if (!result) {
     drawText('本餐结算', 24, SAFE_TOP + 10, 28, '#111', 'left', 'bold')
-    drawHomeMiniButton()
-    drawMusicButton()
-    addButton('next', '继续', 24, H - SAFE_BOTTOM - 72, W - 48, 58, '#111', '#fff', 22)
+        addButton('next', '继续', 24, H - SAFE_BOTTOM - 72, W - 48, 58, '#111', '#fff', 22)
     return
   }
 
@@ -2487,8 +2467,6 @@ function drawMealResult() {
   const selfBusted = selfId === 'p1' ? result.p1Busted : result.p2Busted
   const oppBusted = oppId === 'p1' ? result.p1Busted : result.p2Busted
 
-  drawHomeMiniButton()
-  drawMusicButton()
 
   const panelW = W - 48
   const panelH = Math.min(520, H - SAFE_TOP - SAFE_BOTTOM - 112)
@@ -2549,8 +2527,6 @@ function drawResultPlayer(title, pid, y, h) {
 
 
 function drawDayResult() {
-  drawHomeMiniButton()
-  drawMusicButton()
 
   const selfId = getSelfId()
   const oppId = otherPlayer(selfId)
@@ -2567,8 +2543,6 @@ function drawDayResult() {
     finalText = '你输了'
     finalSubText = '对方赢得了这一整局'
   }
-
-  drawText('今日结算', 24, SAFE_TOP + 8, 30, '#111', 'left', 'bold')
 
   drawRoundRect(20, SAFE_TOP + 48, W - 40, 108, 22, '#FFFFFF', '#111', 3)
   drawText(finalText, W / 2, SAFE_TOP + 62, 28, selfPoint > oppPoint ? '#E94335' : '#111', 'center', 'bold')
@@ -2654,6 +2628,14 @@ function drawOverlayIfNeeded() {
 }
 
 
+
+function drawTopControls() {
+  // 最后绘制，确保永远在最上层，也保证点击区域最后加入 buttons。
+  drawMusicButton()
+  drawHomeMiniButton()
+}
+
+
 function render() {
   buttons = []
   ctx.clearRect(0, 0, W, H)
@@ -2663,23 +2645,27 @@ function render() {
   if (appMode === 'home') {
     drawHome()
     drawOverlayIfNeeded()
+    drawTopControls()
     return
   }
 
   if (game.phase === 'meal_result') {
     drawMealResult()
     drawOverlayIfNeeded()
+    drawTopControls()
     return
   }
 
   if (game.phase === 'day_result') {
     drawDayResult()
     drawOverlayIfNeeded()
+    drawTopControls()
     return
   }
 
   drawGameScreen()
   drawOverlayIfNeeded()
+  drawTopControls()
 }
 
 // =========================

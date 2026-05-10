@@ -1,19 +1,24 @@
-利禄卡 Online v3.3 白屏修复版
+利禄卡 Online v3.4 卡牌显示与顶层按钮优化版
 
-这版修复 v3.2 的白屏问题。
+根据反馈修复：
+1. 解释图片有的手机显示、有的手机不显示的原因：
+   - 不同手机 WebView / Safari 对图片缓存、解码、DPR 的处理不一样；
+   - 有些设备会把带缓存参数的图片请求缓存成失败；
+   - 所以 v3.4 增加“带版本号失败后自动尝试原始路径”的兜底。
 
-白屏原因：
-v3.2 在文件最上方调用 resizeCanvas(true)。
-resizeCanvas 里会调用 requestRender()。
-但 requestRender 内部依赖的 renderScheduled 变量还没有初始化，
-所以浏览器直接报错并停止执行，导致所有机型白屏。
+2. 卡牌正常显示时不再叠加中文名和卡路里：
+   - 直接显示你的卡牌图片本身；
+   - 只有图片加载失败时才显示占位文字，避免完全看不懂牌。
 
-v3.3 修复：
-1. 增加 resizeRenderReady 开关。
-2. 初始化 resizeCanvas 时不触发 requestRender。
-3. 等 requestRender 所需变量初始化后，再允许 resize 触发重绘。
-4. 保留 v3.2 的全机型移动端适配逻辑。
-5. 不包含 audio 文件夹。
+3. “首页”和“音乐”按钮变小：
+   - 首页：44x24
+   - 音乐：58x24
+
+4. 顶部按钮永远最后绘制：
+   - 不会被卡牌区、结算页、提示框盖住；
+   - 点击区域也会在最上层。
+
+5. 今日结算页去掉左上角黑色“今日结算”字样。
 
 上传到 GitHub 仓库根目录，替换：
 - index.html
@@ -22,7 +27,10 @@ v3.3 修复：
 
 继续保留：
 - images/cards
-- 如果要音乐，你自己保留 audio/bgm.mp3
+- 如果你要音乐，请自己保留 audio/bgm.mp3
+
+注意：
+这次 zip 不包含 audio 文件夹。
 
 上传后用这个链接测试：
-https://zhangjie2759.github.io/LiluCard-Online-Test/?v=35
+https://zhangjie2759.github.io/LiluCard-Online-Test/?v=36
