@@ -1,23 +1,25 @@
-利禄卡 Online v3.1 图片加载修复版
+利禄卡 Online v3.2 全机型移动端适配版
 
-这版针对“iPhone 流畅了，但图片加载不出来”做修复：
+这版是为 iPhone 17 Pro 变形/卡顿做的“全机型自适应”，不是写死苹果17尺寸。
 
-1. 修复 iPhone Safari / 微信内置浏览器图片不显示：
-   - v3.0 使用 img.decode() 等待解码；
-   - Safari 有时 decode 不 resolve，导致图片下载完也一直不显示；
-   - v3.1 改成 onload 后立即显示图片。
-
-2. 图片路径加入缓存版本号：
-   - 图片实际请求会变成 images/cards/xxx.png?v33
-   - 避免 iPhone 或微信继续使用旧的失败缓存。
-
-3. 图片渐进加载加快：
-   - 每批从 2 张改成 4 张；
-   - 间隔从 120ms 改成 80ms；
-   - 仍然比一次性全加载流畅，但补图更快。
-
-4. 点击任意按钮时会重试失败图片：
-   - 如果某张图片临时失败，会在下次点击时自动重新请求。
+修复重点：
+1. 使用 visualViewport 获取真实可用宽高
+   - 避免 Safari / 微信地址栏变化导致 100vh 画面被压扁。
+2. 增加 resizeCanvas()
+   - 视口变化、地址栏收起、旋转屏幕时自动重算 W/H。
+3. 使用 ctx.setTransform()
+   - 防止 resize 后重复 scale，造成画面变形。
+4. 动态 DPR
+   - 普通 iPhone 保留较高清晰度。
+   - 高分屏大视口设备自动降到 1.45～1.65，减少 iPhone 17 Pro 渲染压力。
+5. 游戏主界面动态布局
+   - 小屏优先保证底部按钮不被压扁。
+   - 高屏自动展开卡牌区。
+6. 等待提示框和文字字号根据屏幕高度自适应。
+7. 继续保留 v3.1 的图片加载修复：
+   - 不等待 img.decode()
+   - 图片路径带 ?v33
+   - 点击失败图片自动重试
 
 上传到 GitHub 仓库根目录，替换：
 - index.html
@@ -26,13 +28,10 @@
 
 继续保留：
 - images/cards
-- 如果需要音乐，保留 audio/bgm.mp3
+- 如果你要音乐，请自己保留 audio/bgm.mp3
 
 注意：
 这次 zip 不包含 audio 文件夹。
 
 上传后用这个链接测试：
-https://zhangjie2759.github.io/LiluCard-Online-Test/?v=33
-
-如果图片还是不出来，直接打开一张卡图地址检查路径，例如：
-https://zhangjie2759.github.io/LiluCard-Online-Test/images/cards/chicken_wing.png?v33
+https://zhangjie2759.github.io/LiluCard-Online-Test/?v=34

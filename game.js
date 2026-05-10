@@ -1,26 +1,71 @@
 // game.js
-// 利禄卡 Online v3.1 图片加载修复版：修复 iPhone Safari 图片不显示
+// 利禄卡 Online v3.2 全机型移动端适配版：视口自适应 / iPhone17 Pro防变形
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
 const canvas = document.getElementById('gameCanvas')
 const ctx = canvas.getContext('2d')
 
-let W = window.innerWidth
-let H = window.innerHeight
+let W = 0
+let H = 0
+let DPR = 1
+let SAFE_TOP = 18
+let SAFE_BOTTOM = 18
 
-// iPhone 的 devicePixelRatio 通常是 3，Canvas 实际绘制像素会变成 9 倍，容易卡。
-// 限制到 2 可以明显降低渲染压力，同时保留较清晰的文字和卡面。
-const DPR = Math.min(window.devicePixelRatio || 1, 2)
+function getViewportSize() {
+  const vv = window.visualViewport
 
-canvas.width = Math.floor(W * DPR)
-canvas.height = Math.floor(H * DPR)
-ctx.scale(DPR, DPR)
-ctx.imageSmoothingEnabled = true
-ctx.imageSmoothingQuality = 'medium'
+  const width = Math.floor((vv && vv.width) || window.innerWidth || document.documentElement.clientWidth || 390)
+  const height = Math.floor((vv && vv.height) || window.innerHeight || document.documentElement.clientHeight || 780)
 
-const SAFE_TOP = 18
-const SAFE_BOTTOM = 18
+  return {
+    width: Math.max(320, width),
+    height: Math.max(560, height)
+  }
+}
+
+function getTargetDpr(width, height) {
+  const raw = window.devicePixelRatio || 1
+  const area = width * height
+
+  // iPhone 17 Pro / Pro Max 一类设备 CSS 视口更大、DPR 更高。
+  // 如果继续用 DPR=2 或 3，Canvas 实际像素会很重，容易变形和卡。
+  if (raw >= 3 && area > 380000) return 1.45
+  if (raw >= 3 && area > 330000) return 1.65
+
+  return Math.min(raw, 1.85)
+}
+
+function resizeCanvas(force) {
+  const size = getViewportSize()
+  const nextW = size.width
+  const nextH = size.height
+  const nextDpr = getTargetDpr(nextW, nextH)
+
+  if (!force && W === nextW && H === nextH && Math.abs(DPR - nextDpr) < 0.01) return
+
+  W = nextW
+  H = nextH
+  DPR = nextDpr
+
+  const vv = window.visualViewport
+  SAFE_TOP = Math.max(18, Math.round(((vv && vv.offsetTop) || 0) + 18))
+  SAFE_BOTTOM = Math.max(18, H < 700 ? 14 : 18)
+
+  canvas.style.width = `${W}px`
+  canvas.style.height = `${H}px`
+  canvas.width = Math.max(1, Math.floor(W * DPR))
+  canvas.height = Math.max(1, Math.floor(H * DPR))
+
+  // 关键：用 setTransform 重置矩阵，避免 resize 后重复 scale 造成画面变形。
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0)
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'medium'
+
+  if (typeof requestRender === 'function') requestRender()
+}
+
+resizeCanvas(true)
 
 const TOTAL_ORDERS_PER_DAY = 10
 
@@ -2180,21 +2225,21 @@ function drawPlayerPanel(pid, label, x, y, w, h, isOpponent) {
 
   drawRoundRect(x, y, w, h, 22, bg, '#111', 3)
 
-  drawText(label, x + 16, y + 12, 24, '#111', 'left', 'bold')
-  drawText(status, x + 76, y + 18, 14, status === '爆牌' ? '#E94335' : '#111', 'left', 'bold')
+  drawText(label, x + 16, y + 12, H < 720 ? 21 : 24, '#111', 'left', 'bold')
+  drawText(status, x + 72, y + 18, H < 720 ? 12 : 14, status === '爆牌' ? '#E94335' : '#111', 'left', 'bold')
 
   const kcalText = hiddenForOpponent
     ? `? + ${visibleTotal} kcal`
     : `${total}/${meal.threshold} kcal`
 
-  drawText(kcalText, x + w - 16, y + 15, 16, status === '爆牌' ? '#E94335' : '#111', 'right', 'bold')
-  drawText(`外卖 ${game.records[pid].dayOrdersUsed}/${TOTAL_ORDERS_PER_DAY}`, x + 16, y + 44, 13, '#666', 'left', 'bold')
+  drawText(kcalText, x + w - 16, y + 15, H < 720 ? 13 : 16, status === '爆牌' ? '#E94335' : '#111', 'right', 'bold')
+  drawText(`外卖 ${game.records[pid].dayOrdersUsed}/${TOTAL_ORDERS_PER_DAY}`, x + 16, y + 44, H < 720 ? 11 : 13, '#666', 'left', 'bold')
 
   const dayText = hiddenForOpponent
     ? `已结算热量 ${getDayTotalKcal(game, pid)}`
     : `全日总热量 ${getDayTotalKcal(game, pid) + (inResultPhase ? 0 : total)}`
 
-  drawText(dayText, x + 118, y + 44, 13, '#111', 'left', 'bold')
+  drawText(dayText, x + 108, y + 44, H < 720 ? 11 : 13, '#111', 'left', 'bold')
 
   let cardsToDraw = displayCards
 
@@ -2267,7 +2312,7 @@ function drawCenterPanel(x, y, w, h) {
 
 
 function drawActionButtons() {
-  const y = H - SAFE_BOTTOM - 86
+  const y = H - SAFE_BOTTOM - 84
   const gap = 10
   const leftW = Math.floor((W - 32) * 0.52)
   const rightW = W - 32 - leftW - gap
@@ -2331,17 +2376,25 @@ function drawActionButtons() {
 }
 
 
+
 function drawGameScreen() {
   drawTopBadge()
   drawHomeMiniButton()
   drawMusicButton()
 
-  const topY = SAFE_TOP + (appMode === 'online' ? 32 : 0)
+  const isOnline = appMode === 'online'
+  const topY = SAFE_TOP + (isOnline ? 34 : 4)
   const actionY = H - SAFE_BOTTOM - 94
-  const centerH = 86
-  const gap = 8
-  let zoneH = Math.floor((actionY - topY - centerH - gap * 2 - 8) / 2)
-  zoneH = Math.max(184, Math.min(245, zoneH))
+  const gap = H < 700 ? 5 : 8
+  const centerH = H < 680 ? 66 : H < 760 ? 74 : 86
+
+  const available = Math.max(300, actionY - topY - centerH - gap * 2 - 8)
+  let zoneH = Math.floor(available / 2)
+
+  // 全机型自适应：小屏时宁可压缩卡牌区，也不要压扁底部按钮。
+  const minZone = H < 680 ? 116 : H < 760 ? 132 : 150
+  const maxZone = H > 850 ? 248 : 220
+  zoneH = Math.max(minZone, Math.min(maxZone, zoneH))
 
   const ids = getDisplayPlayerIds()
   const opponentY = topY
@@ -2367,6 +2420,7 @@ function applyRevealNight(g) {
 }
 
 
+
 function drawWaitingOpponentFloat() {
   if (appMode !== 'online') return
   if (game.phase !== 'meal_playing') return
@@ -2378,9 +2432,9 @@ function drawWaitingOpponentFloat() {
   if (game.players[selfId] && game.players[selfId].stood) return
 
   const boxW = Math.min(W - 96, 250)
-  const boxH = 66
+  const boxH = H < 720 ? 58 : 66
   const x = (W - boxW) / 2
-  const y = SAFE_TOP + (appMode === 'online' ? 142 : 118)
+  const y = Math.max(SAFE_TOP + 90, Math.min(H * 0.26, SAFE_TOP + 150))
 
   ctx.save()
   ctx.globalAlpha = 0.97
@@ -2388,8 +2442,8 @@ function drawWaitingOpponentFloat() {
   drawRoundRect(x, y, boxW, boxH, 22, '#FFF6E8', '#111', 3)
   ctx.restore()
 
-  drawText('对方点餐中', W / 2, y + 12, 23, '#111', 'center', 'bold')
-  drawText('请等待对方点外卖或开吃', W / 2, y + 44, 11, '#555', 'center', 'bold')
+  drawText('对方点餐中', W / 2, y + 10, H < 720 ? 20 : 23, '#111', 'center', 'bold')
+  drawText('请等待对方点外卖或开吃', W / 2, y + (H < 720 ? 38 : 44), 11, '#555', 'center', 'bold')
 }
 
 
@@ -2802,6 +2856,18 @@ canvas.addEventListener('wheel', event => {
 canvas.addEventListener('mousedown', event => {
   event.preventDefault()
   onPointer(event.clientX, event.clientY)
+})
+
+window.addEventListener('resize', () => resizeCanvas(false))
+
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', () => resizeCanvas(false))
+  window.visualViewport.addEventListener('scroll', () => resizeCanvas(false))
+}
+
+window.addEventListener('orientationchange', () => {
+  setTimeout(() => resizeCanvas(true), 80)
+  setTimeout(() => resizeCanvas(true), 360)
 })
 
 preloadGameImages()
