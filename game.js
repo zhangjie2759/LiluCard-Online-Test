@@ -1,5 +1,5 @@
 // game.js
-// 利禄卡 Online v3.4 卡牌显示与顶层按钮优化版
+// 利禄卡 Online v3.5 iPhone17 Pro图片音乐与夜宵优化版
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -202,14 +202,18 @@ let onlineActionLockUntil = 0
 
 let game = createGame('single')
 
+
 function initBgm() {
   if (bgm) return
 
   try {
-    bgm = new Audio(BGM_SRC)
+    bgm = new Audio()
     bgm.loop = true
     bgm.volume = 0.32
     bgm.preload = 'auto'
+    bgm.autoplay = false
+    bgm.muted = false
+    bgm.playsInline = true
     bgm.setAttribute('playsinline', 'true')
     bgm.setAttribute('webkit-playsinline', 'true')
 
@@ -224,11 +228,15 @@ function initBgm() {
       bgmStatusText = '音乐文件未找到：请检查 audio/bgm.mp3'
       requestRender()
     })
+
+    bgm.src = BGM_SRC
+    bgm.load()
   } catch (err) {
     bgmLoadFailed = true
     bgmStatusText = '音乐初始化失败'
   }
 }
+
 
 function startBgm() {
   if (!bgmEnabled) return
@@ -237,18 +245,33 @@ function startBgm() {
 
   if (!bgm || bgmLoadFailed) return
 
-  // 每次用户点击后都尝试播放一次，解决手机浏览器必须用户手势触发的问题。
-  bgm.play()
-    .then(() => {
-      bgmStarted = true
-      bgmStatusText = '音乐播放中'
-      requestRender()
-    })
-    .catch((err) => {
-      bgmStarted = false
-      bgmStatusText = '点击任意按钮启动音乐'
-      requestRender()
-    })
+  try {
+    bgm.muted = false
+    bgm.volume = 0.32
+    if (!bgm.src) bgm.src = BGM_SRC
+    if (bgm.readyState === 0) bgm.load()
+  } catch (err) {}
+
+  // iOS 上必须由用户手势触发。这里保持同步调用，不放进 setTimeout/Promise 外层。
+  const playPromise = bgm.play()
+
+  if (playPromise && playPromise.then) {
+    playPromise
+      .then(() => {
+        bgmStarted = true
+        bgmStatusText = '音乐播放中'
+        requestRender()
+      })
+      .catch(() => {
+        bgmStarted = false
+        bgmStatusText = '点“音乐”或任意按钮启动'
+        requestRender()
+      })
+  } else {
+    bgmStarted = true
+    bgmStatusText = '音乐播放中'
+    requestRender()
+  }
 }
 
 function toggleBgm() {
@@ -280,6 +303,7 @@ function toggleBgm() {
 }
 
 
+
 function drawMusicButton() {
   let label = '音乐'
 
@@ -293,10 +317,11 @@ function drawMusicButton() {
     label = '音乐'
   }
 
-  addButton('music_toggle', label, 12, SAFE_TOP + 4, 58, 24, '#FFFFFF', '#111', 10)
+  const y = Math.max(3, SAFE_TOP - 11)
+  addButton('music_toggle', label, 8, y, 50, 22, '#FFFFFF', '#111', 9)
 
   if (bgmStatusText && (!bgmStarted || bgmLoadFailed)) {
-    drawText(bgmStatusText, 76, SAFE_TOP + 10, 9, bgmLoadFailed ? '#E94335' : '#777', 'left', 'bold')
+    drawText(bgmStatusText, 62, y + 6, 8, bgmLoadFailed ? '#E94335' : '#777', 'left', 'bold')
   }
 }
 
@@ -629,10 +654,88 @@ function enterMealPlayingIfReady(g) {
   return true
 }
 
+
+function settleNightNoOrders(g) {
+  const meal = meals[g.mealIndex]
+  const p1Remain = getRemainingOrders(g, 'p1')
+  const p2Remain = getRemainingOrders(g, 'p2')
+
+  g.players.p1.cards = []
+  g.players.p2.cards = []
+  g.players.p1.nightChoices = []
+  g.players.p2.nightChoices = []
+  g.players.p1.stood = true
+  g.players.p2.stood = true
+  g.players.p1.busted = false
+  g.players.p2.busted = false
+
+  g.records.p1.rawMealKcal[g.mealIndex] = 0
+  g.records.p2.rawMealKcal[g.mealIndex] = 0
+  g.records.p1.mealKcal[g.mealIndex] = 0
+  g.records.p2.mealKcal[g.mealIndex] = 0
+  g.records.p1.comboResults[g.mealIndex] = null
+  g.records.p2.comboResults[g.mealIndex] = null
+
+  let winner = null
+  let resultText = '双方都没有外卖机会，夜宵无人得分'
+
+  if (p1Remain <= 0 && p2Remain > 0) {
+    winner = 'p2'
+    g.records.p2.basePoint[g.mealIndex] += 1
+    resultText = '玩家1没有留下外卖机会，玩家2赢得夜宵'
+  } else if (p2Remain <= 0 && p1Remain > 0) {
+    winner = 'p1'
+    g.records.p1.basePoint[g.mealIndex] += 1
+    resultText = '玩家2没有留下外卖机会，玩家1赢得夜宵'
+  }
+
+  const p1Point = getMealPoint(g, 'p1', g.mealIndex)
+  const p2Point = getMealPoint(g, 'p2', g.mealIndex)
+
+  g.lastMealResult = {
+    mealIndex: g.mealIndex,
+    mealName: meal.name,
+    threshold: meal.threshold,
+    p1Cards: [],
+    p2Cards: [],
+    p1Total: 0,
+    p2Total: 0,
+    p1Busted: false,
+    p2Busted: false,
+    p1Combo: null,
+    p2Combo: null,
+    p1Point,
+    p2Point,
+    winner,
+    resultText,
+    scoreText: `玩家1 ${getMealTotalPoint(g, 'p1')} : ${getMealTotalPoint(g, 'p2')} 玩家2`
+  }
+
+  if (!g.mealResults) g.mealResults = meals.map(() => null)
+  g.mealResults[g.mealIndex] = clone(g.lastMealResult)
+
+  g.phase = 'meal_result'
+  g.turn = null
+  g.nextReady = { p1: false, p2: false }
+  g.message = `夜宵结算：${resultText}`
+  g.comboMessage = ''
+  g.actionSeq += 1
+}
+
+
 function enterNightPicking(g) {
   g.phase = 'night_picking'
   g.turn = null
   resetMealState(g)
+
+  const p1Remain = getRemainingOrders(g, 'p1')
+  const p2Remain = getRemainingOrders(g, 'p2')
+
+  if (p1Remain <= 0 || p2Remain <= 0) {
+    settleNightNoOrders(g)
+    return
+  }
+
   g.message = '夜宵开始：不分先后，双方按剩余外卖次数选择搭配'
 }
 
@@ -1697,30 +1800,18 @@ function retryFailedImages() {
   })
 }
 
+
 function preloadGameImages() {
   const backs = Object.keys(CARD_BACK_PATHS).map(key => CARD_BACK_PATHS[key])
   const fronts = Object.keys(CARD_IMAGE_PATHS).map(key => CARD_IMAGE_PATHS[key])
 
-  // 先加载卡背，保证底牌和对方隐藏牌不空白。
+  // v3.5：图片单张已经很小，iPhone17 Pro 读取慢主要是渐进加载太保守。
+  // 先同步触发全部请求，避免进入游戏后才等图片排队。
   backs.forEach(src => getImage(src))
 
-  // iPhone 流畅优先：仍然渐进加载，但每批 4 张，比 v3.0 更快补齐图片。
-  let index = 0
-
-  function step() {
-    const batchSize = 4
-
-    for (let i = 0; i < batchSize && index < fronts.length; i++) {
-      getImage(fronts[index])
-      index += 1
-    }
-
-    if (index < fronts.length) {
-      setTimeout(step, 80)
-    }
-  }
-
-  setTimeout(step, 80)
+  setTimeout(() => {
+    fronts.forEach(src => getImage(src))
+  }, 40)
 }
 
 // =========================
@@ -2137,9 +2228,11 @@ function drawHome() {
 
 
 
+
 function drawHomeMiniButton() {
   if (appMode === 'home') return
-  addButton('home', '首页', W - 56, SAFE_TOP + 4, 44, 24, '#FFFFFF', '#111', 10)
+  const y = Math.max(3, SAFE_TOP - 11)
+  addButton('home', '首页', W - 46, y, 38, 22, '#FFFFFF', '#111', 9)
 }
 
 function drawTopBadge() {
@@ -2247,6 +2340,7 @@ function drawPlayerPanel(pid, label, x, y, w, h, isOpponent) {
 
 
 
+
 function drawCenterPanel(x, y, w, h) {
   const meal = getMeal()
   const selfId = getSelfId()
@@ -2256,13 +2350,14 @@ function drawCenterPanel(x, y, w, h) {
 
   drawRoundRect(x, y, w, h, 18, theme.center, '#111', 3)
 
-  drawText(`${game.mealIndex + 1}/4  ${meal.name}`, x + 16, y + 10, 20, '#111', 'left', 'bold')
+  drawText(`${game.mealIndex + 1}/4  ${meal.name}`, x + 16, y + 9, H < 720 ? 17 : 19, '#111', 'left', 'bold')
 
-  const barX = x + w - 214
-  const barY = y + 15
-  const barW = 196
-  const barH = 28
-  const r = 14
+  // v3.5：警戒线固定在中间框的第二行，宽度跟随外框，避免在某些手机上遮挡标题或提示。
+  const barX = x + 16
+  const barY = y + (H < 720 ? 34 : 36)
+  const barW = w - 32
+  const barH = H < 720 ? 18 : 20
+  const r = barH / 2
 
   ctx.save()
   drawRoundRect(barX, barY, barW, barH, r, '#FFFFFF', null, 0)
@@ -2289,11 +2384,11 @@ function drawCenterPanel(x, y, w, h) {
   ctx.fillRect(barX, barY, barW * ratio, barH)
   ctx.restore()
 
-  drawRoundRect(barX, barY, barW, barH, r, null, '#111', 3)
-  drawText(`警戒线 ${meal.threshold}`, barX + barW / 2, barY + 7, 12, '#111', 'center', 'bold')
+  drawRoundRect(barX, barY, barW, barH, r, null, '#111', 2.5)
+  drawText(`警戒线 ${meal.threshold}`, barX + barW / 2, barY + (H < 720 ? 3 : 4), H < 720 ? 10 : 11, '#111', 'center', 'bold')
 
   const hint = getActionHint(game, selfId)
-  wrapText(hint, x + 16, y + 48, w - 32, 18, 13, '#333', 'bold', 2)
+  wrapText(hint, x + 16, barY + barH + 6, w - 32, 16, H < 720 ? 11 : 12, '#333', 'bold', 2)
 }
 
 
@@ -2802,6 +2897,12 @@ function onPointer(clientX, clientY) {
 
 canvas.addEventListener('touchstart', event => {
   event.preventDefault()
+
+  // iOS 17+ 有时第一次 play 会被吞，任何触摸都顺手尝试解锁一次。
+  if (bgmEnabled && (!bgmStarted || (bgm && bgm.paused))) {
+    startBgm()
+  }
+
   const touch = event.touches && event.touches[0]
   if (!touch) return
 
