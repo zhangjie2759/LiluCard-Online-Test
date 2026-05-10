@@ -115,6 +115,10 @@ let unsubscribeRoom = null
 let buttons = []
 let message = ''
 let rulesExpanded = false
+let localReadyLocked = false
+let startRequested = false
+let startOverlayText = ''
+let startOverlayUntil = 0
 
 let game = createGame('single')
 
@@ -241,6 +245,25 @@ function getOpponentId() {
 
 function getMeal() {
   return meals[game.mealIndex]
+}
+
+function getRoomPlayers() {
+  return roomData && roomData.players ? roomData.players : {}
+}
+
+function isReadyLockedForMe() {
+  const players = getRoomPlayers()
+  return Boolean(localReadyLocked || (players[myPlayerId] && players[myPlayerId].ready))
+}
+
+function areBothPlayersReady() {
+  const players = getRoomPlayers()
+  return Boolean(players.p1 && players.p2 && players.p1.ready && players.p2.ready)
+}
+
+function showStartOverlay(text, ms) {
+  startOverlayText = text || '开局中...'
+  startOverlayUntil = Date.now() + (ms || 1200)
 }
 
 function isBusted(g, pid) {
@@ -991,6 +1014,10 @@ async function createOnlineRoom() {
     appMode = 'online'
     roomId = result.roomId
     myPlayerId = result.playerId
+    localReadyLocked = false
+    startRequested = false
+    startOverlayText = ''
+    startOverlayUntil = 0
     game = normalizeGame(initialGame)
     message = `房间创建成功：${roomId}`
 
@@ -1001,6 +1028,15 @@ async function createOnlineRoom() {
 
       if (data && data.game) {
         game = normalizeGame(data.game)
+      }
+
+      if (data && data.players && data.players[myPlayerId] && data.players[myPlayerId].ready) {
+        localReadyLocked = true
+      }
+
+      if (areBothPlayersReady() && (game.phase === 'lobby' || (data && data.status === 'lobby'))) {
+        showStartOverlay('双方已准备，正在开局...', 1400)
+        maybeStartOnlineGame()
       }
 
       render()
@@ -1029,6 +1065,10 @@ async function joinOnlineRoom() {
     appMode = 'online'
     roomId = result.roomId
     myPlayerId = result.playerId
+    localReadyLocked = false
+    startRequested = false
+    startOverlayText = ''
+    startOverlayUntil = 0
 
     if (unsubscribeRoom) unsubscribeRoom()
 
@@ -1037,6 +1077,15 @@ async function joinOnlineRoom() {
 
       if (data && data.game) {
         game = normalizeGame(data.game)
+      }
+
+      if (data && data.players && data.players[myPlayerId] && data.players[myPlayerId].ready) {
+        localReadyLocked = true
+      }
+
+      if (areBothPlayersReady() && (game.phase === 'lobby' || (data && data.status === 'lobby'))) {
+        showStartOverlay('双方已准备，正在开局...', 1400)
+        maybeStartOnlineGame()
       }
 
       render()
@@ -1052,6 +1101,11 @@ async function joinOnlineRoom() {
 
 async function playerReady() {
   if (appMode !== 'online' || !roomId || !myPlayerId) return
+  if (isReadyLockedForMe()) return
+
+  localReadyLocked = true
+  showStartOverlay('你已准备，等待对方准备...', 900)
+  render()
 
   await window.LiluOnline.updateRoom(roomId, {
     [`players/${myPlayerId}/ready`]: true,
@@ -1061,12 +1115,26 @@ async function playerReady() {
   const latest = await window.LiluOnline.getRoom(roomId)
   roomData = latest
 
-  const players = latest.players || {}
-  const p1Ready = Boolean(players.p1 && players.p1.ready)
-  const p2Ready = Boolean(players.p2 && players.p2.ready)
+  if (latest && latest.game) {
+    game = normalizeGame(latest.game)
+  }
 
-  if (players.p1 && players.p2 && p1Ready && p2Ready) {
-    const next = normalizeGame(latest.game)
+  render()
+  await maybeStartOnlineGame()
+}
+
+async function maybeStartOnlineGame() {
+  if (appMode !== 'online' || !roomId || !roomData) return
+  if (!areBothPlayersReady()) return
+  if (!(game.phase === 'lobby' || (roomData.status || '') === 'lobby')) return
+  if (startRequested) return
+
+  startRequested = true
+  showStartOverlay('双方已准备，正在开局...', 1400)
+  render()
+
+  try {
+    const next = normalizeGame(roomData.game)
     next.phase = 'opening'
     next.message = '双方已准备：早餐起手阶段，双方各抽2张'
     next.mealIndex = 0
@@ -1077,6 +1145,10 @@ async function playerReady() {
       status: 'playing',
       game: next
     })
+  } catch (err) {
+    startRequested = false
+    message = `开局失败：${err.message || err}`
+    render()
   }
 }
 
@@ -1090,6 +1162,10 @@ function leaveToHome() {
   roomId = ''
   myPlayerId = 'p1'
   roomData = null
+  localReadyLocked = false
+  startRequested = false
+  startOverlayText = ''
+  startOverlayUntil = 0
   game = createGame('single')
   message = ''
   render()
@@ -1422,9 +1498,8 @@ function drawActionButtons() {
     addButton('noop', '主食', leftX, y + smallH + smallGap, smallW, smallH, '#ddd', '#555', 18)
     addButton('noop', '甜点', leftX + smallW + smallGap, y + smallH + smallGap, smallW, smallH, '#ddd', '#555', 18)
 
-    const players = roomData && roomData.players ? roomData.players : {}
-    const ready = Boolean(players[myPlayerId] && players[myPlayerId].ready)
-    addButton('ready', ready ? '已准备' : '准备', leftX + leftW + gap, y, rightW, 72, '#FFE169', '#111', 24)
+    const ready = isReadyLockedForMe()
+    addButton(ready ? 'noop' : 'ready', ready ? '已准备' : '准备', leftX + leftW + gap, y, rightW, 72, '#FFE169', '#111', 24)
     return
   }
 
@@ -1565,6 +1640,24 @@ function drawDayResult() {
 // 渲染入口
 // =========================
 
+function drawOverlayIfNeeded() {
+  if (Date.now() > startOverlayUntil || !startOverlayText) return
+
+  ctx.save()
+  ctx.fillStyle = 'rgba(0,0,0,0.18)'
+  ctx.fillRect(0, 0, W, H)
+
+  const boxW = Math.min(W - 60, 280)
+  const boxH = 96
+  const x = (W - boxW) / 2
+  const y = (H - boxH) / 2
+
+  drawRoundRect(x, y, boxW, boxH, 22, '#111', '#111', 2)
+  drawText('开始', x + boxW / 2, y + 18, 30, '#FFE169', 'center', 'bold')
+  drawText(startOverlayText, x + boxW / 2, y + 56, 14, '#fff', 'center', 'bold')
+  ctx.restore()
+}
+
 function render() {
   buttons = []
   ctx.clearRect(0, 0, W, H)
@@ -1573,20 +1666,24 @@ function render() {
 
   if (appMode === 'home') {
     drawHome()
+    drawOverlayIfNeeded()
     return
   }
 
   if (game.phase === 'meal_result') {
     drawMealResult()
+    drawOverlayIfNeeded()
     return
   }
 
   if (game.phase === 'day_result') {
     drawDayResult()
+    drawOverlayIfNeeded()
     return
   }
 
   drawGameScreen()
+  drawOverlayIfNeeded()
 }
 
 // =========================
