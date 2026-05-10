@@ -1,37 +1,39 @@
-利禄卡 Online v3.9 清理稳定版
+利禄卡 Online v4.0 回归稳定基础版
 
-这版不是加功能，而是把最近多轮补丁后残留的加载/渲染/音乐逻辑收束成一套稳定逻辑。
+这版目标：
+不是继续加补丁，而是回到早期图片能稳定显示的基础环境。
 
-清理内容：
-1. 删除旧 Loading 相关逻辑：
-   - 不再强制等待图片加载完成才能进入首页
-   - 不再保留 loadingProgress / startAssetPreload / loadImageWithRetry 等旧代码
+主要变化：
+1. index.html 回退到早期简单结构：
+   - width=100vw
+   - height=100vh
+   - 不再使用 100dvh
+   - 不再使用 position: fixed
+   - 不再使用 viewport-fit=cover / interactive-widget
 
-2. 图片加载回到稳定模式：
-   - 只使用原始路径 img.src = src
-   - 不再默认添加 ?v 参数
+2. Canvas 适配回归简单：
+   - 不再使用 visualViewport
+   - 不再监听 visualViewport resize / scroll
+   - 只监听 window resize / orientationchange
+   - DPR 简单限制到 1.6
+
+3. 图片调用回归稳定方式：
+   - img.src = 原始路径
+   - 不加 ?v 参数
    - 不使用 img.decode()
-   - 不把游戏入口绑定在图片回调上
+   - 不使用 Loading 阻塞
+   - 图片失败后，下次显示会重新请求
 
-3. 图片后台预热：
-   - 卡背优先加载
-   - 正面卡图分批后台预热
-   - 图片 onload 不再每张都立即整屏重绘，而是合并成较少重绘
+4. 资源竞争降低：
+   - 背景图预热变保守
+   - 音乐不再在进入游戏时自动抢加载
+   - 只有点“音乐”按钮才启动音乐
 
-4. 音乐逻辑收束：
-   - 不再每次 touchstart 都尝试播放
-   - 只在点“音乐”、单机、开房间、加入房间时尝试启动
-   - 音乐失败不会影响游戏流程
-
-5. resize 逻辑防抖：
-   - visualViewport / resize 不再每次小变化都立即重排
-   - 减少 iPhone 地址栏变化造成的卡顿和变形
-
-6. 保留：
-   - v3.x 的全机型移动端适配
-   - 顶部按钮最上层
-   - 小局/今日结算
-   - 联机同步防覆盖逻辑
+5. 保留：
+   - 联机功能
+   - 顶部按钮
+   - 结算逻辑
+   - 移动端基本 DPR 限制
 
 不包含 audio 文件夹。
 
@@ -45,4 +47,4 @@
 - 如果需要音乐，请你自己保留 audio/bgm.mp3
 
 上传后用这个链接测试：
-https://zhangjie2759.github.io/LiluCard-Online-Test/?v=41
+https://zhangjie2759.github.io/LiluCard-Online-Test/?v=42

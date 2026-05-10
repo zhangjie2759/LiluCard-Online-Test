@@ -1,47 +1,27 @@
 // game.js
-// 利禄卡 Online v3.9 清理稳定版：图片/音乐/resize逻辑收束
+// 利禄卡 Online v4.0 回归稳定基础版：简单index / 简单viewport / 稳定图片调用
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
 const canvas = document.getElementById('gameCanvas')
 const ctx = canvas.getContext('2d')
 
-let W = 0
-let H = 0
-let DPR = 1
+let W = window.innerWidth
+let H = window.innerHeight
+
+// v4.0：回归稳定基础版。
+// 不再使用 visualViewport / 100dvh / 复杂安全区计算。
+// 只做简单 DPR 限制，降低 iPhone 高分屏渲染压力。
+let DPR = Math.min(window.devicePixelRatio || 1, 1.6)
+
 let SAFE_TOP = 18
 let SAFE_BOTTOM = 18
 let resizeRenderReady = false
 
-function getViewportSize() {
-  const vv = window.visualViewport
-
-  const width = Math.floor((vv && vv.width) || window.innerWidth || document.documentElement.clientWidth || 390)
-  const height = Math.floor((vv && vv.height) || window.innerHeight || document.documentElement.clientHeight || 780)
-
-  return {
-    width: Math.max(320, width),
-    height: Math.max(560, height)
-  }
-}
-
-function getTargetDpr(width, height) {
-  const raw = window.devicePixelRatio || 1
-  const area = width * height
-
-  // iPhone 17 Pro / Pro Max 一类设备 CSS 视口更大、DPR 更高。
-  // 如果继续用 DPR=2 或 3，Canvas 实际像素会很重，容易变形和卡。
-  if (raw >= 3 && area > 380000) return 1.45
-  if (raw >= 3 && area > 330000) return 1.65
-
-  return Math.min(raw, 1.85)
-}
-
 function resizeCanvas(force) {
-  const size = getViewportSize()
-  const nextW = size.width
-  const nextH = size.height
-  const nextDpr = getTargetDpr(nextW, nextH)
+  const nextW = Math.max(320, Math.floor(window.innerWidth || document.documentElement.clientWidth || 390))
+  const nextH = Math.max(560, Math.floor(window.innerHeight || document.documentElement.clientHeight || 780))
+  const nextDpr = Math.min(window.devicePixelRatio || 1, 1.6)
 
   if (!force && W === nextW && H === nextH && Math.abs(DPR - nextDpr) < 0.01) return
 
@@ -49,16 +29,15 @@ function resizeCanvas(force) {
   H = nextH
   DPR = nextDpr
 
-  const vv = window.visualViewport
-  SAFE_TOP = Math.max(18, Math.round(((vv && vv.offsetTop) || 0) + 18))
-  SAFE_BOTTOM = Math.max(18, H < 700 ? 14 : 18)
+  SAFE_TOP = 18
+  SAFE_BOTTOM = H < 700 ? 14 : 18
 
-  canvas.style.width = `${W}px`
-  canvas.style.height = `${H}px`
-  canvas.width = Math.max(1, Math.floor(W * DPR))
-  canvas.height = Math.max(1, Math.floor(H * DPR))
+  canvas.width = Math.floor(W * DPR)
+  canvas.height = Math.floor(H * DPR)
 
-  // 关键：用 setTransform 重置矩阵，避免 resize 后重复 scale 造成画面变形。
+  canvas.style.width = '100vw'
+  canvas.style.height = '100vh'
+
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0)
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'medium'
@@ -1805,18 +1784,17 @@ function retryFailedImages() {
 
 
 
+
 function preloadGameImages() {
   const backs = Object.keys(CARD_BACK_PATHS).map(key => CARD_BACK_PATHS[key])
   const fronts = Object.keys(CARD_IMAGE_PATHS).map(key => CARD_IMAGE_PATHS[key])
 
-  // 卡背优先，保证底牌/隐藏牌先有图。
   backs.forEach(src => getImage(src))
 
-  // 正面卡图后台预热，但不阻塞首页和游戏流程。
   let index = 0
 
   function step() {
-    const batchSize = 4
+    const batchSize = 2
 
     for (let i = 0; i < batchSize && index < fronts.length; i++) {
       getImage(fronts[index])
@@ -1824,11 +1802,11 @@ function preloadGameImages() {
     }
 
     if (index < fronts.length) {
-      setTimeout(step, 120)
+      setTimeout(step, 160)
     }
   }
 
-  setTimeout(step, 120)
+  setTimeout(step, 180)
 }
 
 
@@ -2047,15 +2025,17 @@ const imageCache = {}
 
 
 
+
 function getImage(src) {
   if (!src) return null
-  if (imageCache[src]) return imageCache[src]
+
+  const cached = imageCache[src]
+  if (cached && !cached.failed) return cached
 
   const img = new Image()
   img.loaded = false
   img.failed = false
   img.decoding = 'async'
-  img.loading = 'eager'
 
   img.onload = () => {
     img.loaded = true
@@ -2069,7 +2049,7 @@ function getImage(src) {
     scheduleImageRender()
   }
 
-  // v3.9：只使用原始路径，避免部分 iPhone / WebView 对带参数图片请求不稳定。
+  // v4.0：只使用原始路径，和早期稳定版一致。
   img.src = src
 
   imageCache[src] = img
@@ -2913,13 +2893,13 @@ async function handleAction(id) {
 
 
 
+
 function onPointer(clientX, clientY) {
   const id = hitButton(clientX, clientY)
   if (!id || id === 'noop') return
 
-  // 音乐只在明确按钮或进入游戏相关按钮时尝试启动，避免每次触摸都反复 play。
-  if (id === 'music_toggle' || id === 'single_start' || id === 'online_create' || id === 'online_join') {
-    if (id !== 'music_toggle') startBgm()
+  if (id === 'music_toggle') {
+    startBgm()
   }
 
   retryFailedImages()
@@ -2988,15 +2968,10 @@ function scheduleResize(force) {
   resizeTimer = setTimeout(() => {
     resizeTimer = null
     resizeCanvas(Boolean(force))
-  }, force ? 80 : 140)
+  }, force ? 80 : 180)
 }
 
 window.addEventListener('resize', () => scheduleResize(false))
-
-if (window.visualViewport) {
-  window.visualViewport.addEventListener('resize', () => scheduleResize(false))
-  window.visualViewport.addEventListener('scroll', () => scheduleResize(false))
-}
 
 window.addEventListener('orientationchange', () => {
   scheduleResize(true)
