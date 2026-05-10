@@ -1,8 +1,6 @@
 // online.js
-// 利禄卡 Online v0.5
-// 无 Firebase SDK 版本：不再加载 gstatic Firebase 脚本。
-// 直接使用 Firebase Realtime Database REST API + 轮询同步。
-// 优点：避免 “Firebase SDK 没有加载成功” 导致无法开房间。
+// 利禄卡 Online v2.0：Firebase Realtime Database REST 同步层
+// 不依赖 Firebase SDK，避免 SDK 加载失败。
 
 (function () {
   const DATABASE_URL = "https://lilucard-online-test-default-rtdb.firebaseio.com"
@@ -37,39 +35,43 @@
       throw new Error(`数据库请求失败：${res.status}`)
     }
 
-    if (res.status === 204) return null
-
     const text = await res.text()
-    if (!text) return null
+    return text ? JSON.parse(text) : null
+  }
 
-    return JSON.parse(text)
+  function expandPatch(flatPatch) {
+    const result = {}
+
+    Object.keys(flatPatch || {}).forEach(key => {
+      const value = flatPatch[key]
+
+      if (key.indexOf("/") < 0) {
+        result[key] = value
+        return
+      }
+
+      const parts = key.split("/").filter(Boolean)
+      let cursor = result
+
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i]
+
+        if (i === parts.length - 1) {
+          cursor[part] = value
+        } else {
+          if (!cursor[part] || typeof cursor[part] !== "object") {
+            cursor[part] = {}
+          }
+          cursor = cursor[part]
+        }
+      }
+    })
+
+    return result
   }
 
   async function getRoom(roomId) {
-    return requestJSON(roomUrl(roomId), {
-      method: "GET"
-    })
-  }
-
-  function setByPath(target, path, value) {
-    const parts = String(path).split("/").filter(Boolean)
-
-    if (parts.length === 0) return
-
-    let cursor = target
-
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i]
-
-      if (i === parts.length - 1) {
-        cursor[part] = value
-      } else {
-        if (!cursor[part] || typeof cursor[part] !== "object") {
-          cursor[part] = {}
-        }
-        cursor = cursor[part]
-      }
-    }
+    return requestJSON(roomUrl(roomId), { method: "GET" })
   }
 
   async function putRoom(roomId, data) {
@@ -80,19 +82,10 @@
   }
 
   async function patchRoom(roomId, patch) {
-    const id = cleanRoomId(roomId)
-    const current = await getRoom(id)
-    const next = current && typeof current === "object" ? current : {}
-
-    Object.keys(patch || {}).forEach(key => {
-      if (key.indexOf("/") >= 0) {
-        setByPath(next, key, patch[key])
-      } else {
-        next[key] = patch[key]
-      }
+    return requestJSON(roomUrl(roomId), {
+      method: "PATCH",
+      body: JSON.stringify(expandPatch(patch))
     })
-
-    return putRoom(id, next)
   }
 
   async function createRoom(initialGame) {
@@ -106,7 +99,7 @@
 
     await putRoom(roomId, {
       roomId,
-      status: "waiting",
+      status: "lobby",
       createdAt: now(),
       updatedAt: now(),
       players: {
@@ -143,7 +136,7 @@
 
     if (players.p1 && !players.p2) {
       await patchRoom(id, {
-        status: "waiting",
+        status: "lobby",
         updatedAt: now(),
         "players/p2": {
           joined: true,
@@ -172,8 +165,7 @@
       if (stopped) return
 
       try {
-        const id = cleanRoomId(roomId)
-        const url = roomUrl(id) + `?t=${Date.now()}`
+        const url = roomUrl(roomId) + `?t=${Date.now()}`
         const res = await fetch(url, { cache: "no-store" })
 
         if (!res.ok) {
@@ -182,11 +174,9 @@
 
         const text = await res.text()
 
-        // 数据没变化就不重复 render，减少手机卡顿
         if (text !== lastText) {
           lastText = text
-          const data = text ? JSON.parse(text) : null
-          callback(data)
+          callback(text ? JSON.parse(text) : null)
         }
       } catch (err) {
         callback({
@@ -218,16 +208,15 @@
   }
 
   async function deleteRoom(roomId) {
-    return requestJSON(roomUrl(roomId), {
-      method: "DELETE"
-    })
+    return requestJSON(roomUrl(roomId), { method: "DELETE" })
   }
 
-  window.createRoom = createRoom
-  window.joinRoom = joinRoom
-  window.listenRoom = listenRoom
-  window.updateRoom = updateRoom
-  window.deleteRoom = deleteRoom
-  window.getRoom = getRoom
-  window.liluOnlineReady = true
+  window.LiluOnline = {
+    createRoom,
+    joinRoom,
+    listenRoom,
+    updateRoom,
+    deleteRoom,
+    getRoom
+  }
 })()
