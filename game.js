@@ -1,5 +1,5 @@
 // game.js
-// 利禄卡 Online v3.6 资源预加载与最终热量结算版
+// 利禄卡 Online v3.7 预加载超时修复版
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -179,6 +179,8 @@ let loadingFailed = []
 let loadingDone = false
 let loadingStarted = false
 let loadingStatusText = '正在备餐...'
+let loadingStartTime = 0
+let loadingCanSkip = false
 
 // =========================
 // 背景音乐 BGM
@@ -347,8 +349,13 @@ function getAllImageSources() {
   return Array.from(new Set(srcs))
 }
 
+
 function loadImageWithRetry(src, retryLeft) {
   return new Promise(resolve => {
+    let finished = false
+    let currentMode = 'versioned'
+    let timer = null
+
     const img = new Image()
     img.loaded = false
     img.failed = false
@@ -356,56 +363,93 @@ function loadImageWithRetry(src, retryLeft) {
     img.decoding = 'async'
     img.loading = 'eager'
 
-    const finishSuccess = () => {
+    function finish(result) {
+      if (finished) return
+      finished = true
+      if (timer) clearTimeout(timer)
+      resolve(result)
+    }
+
+    function markSuccess() {
       img.loaded = true
       img.failed = false
       imageCache[src] = img
-      resolve({ src, ok: true })
+      finish({ src, ok: true })
     }
 
-    const tryRawOrRetry = () => {
-      if (!img.retryRaw) {
+    function markFailedOrRetry() {
+      if (finished) return
+
+      if (currentMode === 'versioned') {
+        currentMode = 'raw'
         img.retryRaw = true
-        img.src = src
+        startLoad(src, 'raw')
         return
       }
 
       if (retryLeft > 0) {
         setTimeout(() => {
           loadImageWithRetry(src, retryLeft - 1).then(resolve)
-        }, 220)
+        }, 160)
+        finished = true
+        if (timer) clearTimeout(timer)
         return
       }
 
       img.loaded = false
       img.failed = true
       imageCache[src] = img
-      resolve({ src, ok: false })
+      finish({ src, ok: false })
     }
 
-    img.onload = finishSuccess
-    img.onerror = tryRawOrRetry
+    function startLoad(url, mode) {
+      if (timer) clearTimeout(timer)
+
+      // iPhone17 / 部分微信 WebView 可能既不触发 onload，也不触发 onerror。
+      // 必须给每张图一个超时，否则 loading 会永远卡在 0%。
+      timer = setTimeout(() => {
+        markFailedOrRetry()
+      }, 2600)
+
+      img.onload = markSuccess
+      img.onerror = markFailedOrRetry
+      img.src = url
+    }
 
     const connector = src.indexOf('?') >= 0 ? '&' : '?'
-    img.src = `${src}${connector}${IMAGE_CACHE_VERSION}`
+    startLoad(`${src}${connector}${IMAGE_CACHE_VERSION}`, 'versioned')
   })
 }
+
 
 function startAssetPreload() {
   if (loadingStarted) return
   loadingStarted = true
+  loadingStartTime = Date.now()
+  loadingCanSkip = false
 
   const sources = getAllImageSources()
   loadingTotal = sources.length
   loadingLoaded = 0
   loadingFailed = []
-  loadingProgress = 0
-  loadingStatusText = '正在备餐...'
+  loadingProgress = 1
+  loadingStatusText = '正在连接图片资源...'
 
   // 音乐只 preload，不强制播放。iPhone 必须等玩家点击后才能真正播放。
   try {
     initBgm()
   } catch (err) {}
+
+  // 如果 iPhone 某些资源一直不回调，至少允许用户跳过。
+  setTimeout(() => {
+    if (appMode === 'loading' && !loadingDone) {
+      loadingCanSkip = true
+      loadingStatusText = loadingLoaded > 0
+        ? `已加载 ${loadingLoaded}/${loadingTotal}，可继续等待或跳过`
+        : '图片连接较慢，可继续等待或跳过'
+      requestRender()
+    }
+  }, 3200)
 
   if (sources.length === 0) {
     loadingProgress = 100
@@ -415,7 +459,7 @@ function startAssetPreload() {
     return
   }
 
-  const concurrency = 5
+  const concurrency = 4
   let cursor = 0
 
   function runNext() {
@@ -424,9 +468,9 @@ function startAssetPreload() {
     const src = sources[cursor]
     cursor += 1
 
-    loadImageWithRetry(src, 2).then(result => {
+    loadImageWithRetry(src, 1).then(result => {
       loadingLoaded += 1
-      loadingProgress = Math.round((loadingLoaded / loadingTotal) * 100)
+      loadingProgress = Math.max(1, Math.round((loadingLoaded / loadingTotal) * 100))
 
       if (!result.ok) {
         loadingFailed.push(result.src)
@@ -434,9 +478,11 @@ function startAssetPreload() {
 
       if (loadingLoaded >= loadingTotal) {
         loadingDone = true
+        loadingProgress = 100
 
         if (loadingFailed.length > 0) {
-          loadingStatusText = `有 ${loadingFailed.length} 张图片加载失败，可继续或重试`
+          loadingCanSkip = true
+          loadingStatusText = `有 ${loadingFailed.length} 张图片加载失败，可重试或继续`
         } else {
           loadingStatusText = '备餐完成'
           setTimeout(() => {
@@ -444,7 +490,7 @@ function startAssetPreload() {
               appMode = 'home'
               requestRender()
             }
-          }, 280)
+          }, 220)
         }
       } else {
         loadingStatusText = `正在备餐 ${loadingProgress}%`
@@ -460,30 +506,34 @@ function startAssetPreload() {
   }
 }
 
+
 function retryAssetPreload() {
   loadingStarted = false
   loadingDone = false
   loadingProgress = 0
   loadingLoaded = 0
   loadingFailed = []
+  loadingCanSkip = false
+  loadingStartTime = 0
   loadingStatusText = '重新备餐...'
   startAssetPreload()
   requestRender()
 }
 
+
 function drawLoadingScreen() {
   const panelW = Math.min(W - 48, 330)
-  const panelH = 260
+  const panelH = 280
   const x = (W - panelW) / 2
-  const y = Math.max(SAFE_TOP + 80, (H - panelH) / 2)
+  const y = Math.max(SAFE_TOP + 70, (H - panelH) / 2)
 
   drawRoundRect(x, y, panelW, panelH, 28, '#FFFFFF', '#111', 4)
 
-  drawText('正在备餐', W / 2, y + 34, 36, '#111', 'center', 'bold')
-  drawText('Loading Cards', W / 2, y + 82, 13, '#777', 'center', 'bold')
+  drawText('正在备餐', W / 2, y + 30, 36, '#111', 'center', 'bold')
+  drawText('Loading Cards', W / 2, y + 78, 13, '#777', 'center', 'bold')
 
   const barX = x + 34
-  const barY = y + 122
+  const barY = y + 118
   const barW = panelW - 68
   const barH = 24
   const ratio = Math.max(0, Math.min(1, loadingProgress / 100))
@@ -497,12 +547,19 @@ function drawLoadingScreen() {
   ctx.restore()
   drawText(`${loadingProgress}%`, W / 2, barY + 5, 12, '#111', 'center', 'bold')
 
-  wrapText(loadingStatusText, x + 30, y + 164, panelW - 60, 18, 12, loadingFailed.length ? '#E94335' : '#555', 'bold', 2)
+  wrapText(loadingStatusText, x + 30, y + 160, panelW - 60, 18, 12, loadingFailed.length ? '#E94335' : '#555', 'bold', 2)
 
-  if (loadingDone && loadingFailed.length > 0) {
+  if (loadingDone && loadingFailed.length === 0) {
+    drawText('即将进入首页', W / 2, y + 212, 13, '#777', 'center', 'bold')
+    return
+  }
+
+  if (loadingCanSkip || (loadingDone && loadingFailed.length > 0)) {
     const btnW = (panelW - 74) / 2
-    addButton('loading_retry', '重试', x + 26, y + 204, btnW, 42, '#FFFFFF', '#111', 16)
-    addButton('loading_continue', '继续', x + 48 + btnW, y + 204, btnW, 42, '#111', '#fff', 16)
+    addButton('loading_retry', '重试', x + 26, y + 216, btnW, 42, '#FFFFFF', '#111', 16)
+    addButton('loading_continue', '跳过', x + 48 + btnW, y + 216, btnW, 42, '#111', '#fff', 16)
+  } else {
+    drawText('首次加载可能需要几秒', W / 2, y + 224, 12, '#999', 'center', 'bold')
   }
 }
 
@@ -2970,6 +3027,7 @@ async function handleAction(id) {
 
   if (id === 'loading_continue') {
     appMode = 'home'
+    loadingDone = true
     requestRender()
     return
   }
