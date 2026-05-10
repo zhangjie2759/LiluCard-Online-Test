@@ -1,5 +1,5 @@
 // game.js
-// 利禄卡 Online v3.5 iPhone17 Pro图片音乐与夜宵优化版
+// 利禄卡 Online v3.6 资源预加载与最终热量结算版
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -163,7 +163,7 @@ const TYPE_TEXT_COLORS = {
   '甜点': '#063D66'
 }
 
-let appMode = 'home' // home / single / online
+let appMode = 'loading' // loading / home / single / online
 let myPlayerId = 'p1'
 let roomId = ''
 let roomData = null
@@ -171,6 +171,14 @@ let unsubscribeRoom = null
 let buttons = []
 let message = ''
 let rulesExpanded = false
+
+let loadingProgress = 0
+let loadingLoaded = 0
+let loadingTotal = 0
+let loadingFailed = []
+let loadingDone = false
+let loadingStarted = false
+let loadingStatusText = '正在备餐...'
 
 // =========================
 // 背景音乐 BGM
@@ -322,6 +330,179 @@ function drawMusicButton() {
 
   if (bgmStatusText && (!bgmStarted || bgmLoadFailed)) {
     drawText(bgmStatusText, 62, y + 6, 8, bgmLoadFailed ? '#E94335' : '#777', 'left', 'bold')
+  }
+}
+
+
+// =========================
+// 资源预加载 Loading
+// =========================
+
+function getAllImageSources() {
+  const srcs = []
+
+  Object.keys(CARD_BACK_PATHS).forEach(key => srcs.push(CARD_BACK_PATHS[key]))
+  Object.keys(CARD_IMAGE_PATHS).forEach(key => srcs.push(CARD_IMAGE_PATHS[key]))
+
+  return Array.from(new Set(srcs))
+}
+
+function loadImageWithRetry(src, retryLeft) {
+  return new Promise(resolve => {
+    const img = new Image()
+    img.loaded = false
+    img.failed = false
+    img.retryRaw = false
+    img.decoding = 'async'
+    img.loading = 'eager'
+
+    const finishSuccess = () => {
+      img.loaded = true
+      img.failed = false
+      imageCache[src] = img
+      resolve({ src, ok: true })
+    }
+
+    const tryRawOrRetry = () => {
+      if (!img.retryRaw) {
+        img.retryRaw = true
+        img.src = src
+        return
+      }
+
+      if (retryLeft > 0) {
+        setTimeout(() => {
+          loadImageWithRetry(src, retryLeft - 1).then(resolve)
+        }, 220)
+        return
+      }
+
+      img.loaded = false
+      img.failed = true
+      imageCache[src] = img
+      resolve({ src, ok: false })
+    }
+
+    img.onload = finishSuccess
+    img.onerror = tryRawOrRetry
+
+    const connector = src.indexOf('?') >= 0 ? '&' : '?'
+    img.src = `${src}${connector}${IMAGE_CACHE_VERSION}`
+  })
+}
+
+function startAssetPreload() {
+  if (loadingStarted) return
+  loadingStarted = true
+
+  const sources = getAllImageSources()
+  loadingTotal = sources.length
+  loadingLoaded = 0
+  loadingFailed = []
+  loadingProgress = 0
+  loadingStatusText = '正在备餐...'
+
+  // 音乐只 preload，不强制播放。iPhone 必须等玩家点击后才能真正播放。
+  try {
+    initBgm()
+  } catch (err) {}
+
+  if (sources.length === 0) {
+    loadingProgress = 100
+    loadingDone = true
+    appMode = 'home'
+    requestRender()
+    return
+  }
+
+  const concurrency = 5
+  let cursor = 0
+
+  function runNext() {
+    if (cursor >= sources.length) return
+
+    const src = sources[cursor]
+    cursor += 1
+
+    loadImageWithRetry(src, 2).then(result => {
+      loadingLoaded += 1
+      loadingProgress = Math.round((loadingLoaded / loadingTotal) * 100)
+
+      if (!result.ok) {
+        loadingFailed.push(result.src)
+      }
+
+      if (loadingLoaded >= loadingTotal) {
+        loadingDone = true
+
+        if (loadingFailed.length > 0) {
+          loadingStatusText = `有 ${loadingFailed.length} 张图片加载失败，可继续或重试`
+        } else {
+          loadingStatusText = '备餐完成'
+          setTimeout(() => {
+            if (appMode === 'loading') {
+              appMode = 'home'
+              requestRender()
+            }
+          }, 280)
+        }
+      } else {
+        loadingStatusText = `正在备餐 ${loadingProgress}%`
+        runNext()
+      }
+
+      requestRender()
+    })
+  }
+
+  for (let i = 0; i < concurrency; i++) {
+    runNext()
+  }
+}
+
+function retryAssetPreload() {
+  loadingStarted = false
+  loadingDone = false
+  loadingProgress = 0
+  loadingLoaded = 0
+  loadingFailed = []
+  loadingStatusText = '重新备餐...'
+  startAssetPreload()
+  requestRender()
+}
+
+function drawLoadingScreen() {
+  const panelW = Math.min(W - 48, 330)
+  const panelH = 260
+  const x = (W - panelW) / 2
+  const y = Math.max(SAFE_TOP + 80, (H - panelH) / 2)
+
+  drawRoundRect(x, y, panelW, panelH, 28, '#FFFFFF', '#111', 4)
+
+  drawText('正在备餐', W / 2, y + 34, 36, '#111', 'center', 'bold')
+  drawText('Loading Cards', W / 2, y + 82, 13, '#777', 'center', 'bold')
+
+  const barX = x + 34
+  const barY = y + 122
+  const barW = panelW - 68
+  const barH = 24
+  const ratio = Math.max(0, Math.min(1, loadingProgress / 100))
+
+  drawRoundRect(barX, barY, barW, barH, 12, '#F3E9D8', '#111', 2.5)
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(barX, barY, barW * ratio, barH)
+  ctx.clip()
+  drawRoundRect(barX, barY, barW, barH, 12, '#FFE169', null, 0)
+  ctx.restore()
+  drawText(`${loadingProgress}%`, W / 2, barY + 5, 12, '#111', 'center', 'bold')
+
+  wrapText(loadingStatusText, x + 30, y + 164, panelW - 60, 18, 12, loadingFailed.length ? '#E94335' : '#555', 'bold', 2)
+
+  if (loadingDone && loadingFailed.length > 0) {
+    const btnW = (panelW - 74) / 2
+    addButton('loading_retry', '重试', x + 26, y + 204, btnW, 42, '#FFFFFF', '#111', 16)
+    addButton('loading_continue', '继续', x + 48 + btnW, y + 204, btnW, 42, '#111', '#fff', 16)
   }
 }
 
@@ -1801,17 +1982,13 @@ function retryFailedImages() {
 }
 
 
+
 function preloadGameImages() {
-  const backs = Object.keys(CARD_BACK_PATHS).map(key => CARD_BACK_PATHS[key])
-  const fronts = Object.keys(CARD_IMAGE_PATHS).map(key => CARD_IMAGE_PATHS[key])
-
-  // v3.5：图片单张已经很小，iPhone17 Pro 读取慢主要是渐进加载太保守。
-  // 先同步触发全部请求，避免进入游戏后才等图片排队。
-  backs.forEach(src => getImage(src))
-
-  setTimeout(() => {
-    fronts.forEach(src => getImage(src))
-  }, 40)
+  // v3.6：实际预加载由 loading 页 startAssetPreload 完成。
+  // 这里保留函数，避免旧调用报错；如果中途有遗漏图片，会由 getImage 按需补载。
+  getAllImageSources().forEach(src => {
+    if (!imageCache[src]) getImage(src)
+  })
 }
 
 // =========================
@@ -1864,7 +2041,7 @@ function getMealTheme(index) {
 }
 
 function getPageBg() {
-  if (appMode === 'home' || !game) return '#F7F1E8'
+  if (appMode === 'loading' || appMode === 'home' || !game) return '#F7F1E8'
   return getMealTheme(game.mealIndex).bg
 }
 
@@ -2015,6 +2192,7 @@ const imageCache = {}
 
 
 
+
 function getImage(src) {
   if (!src) return null
 
@@ -2035,8 +2213,6 @@ function getImage(src) {
   }
 
   img.onerror = () => {
-    // 某些手机 WebView 可能会把带查询参数的图片请求缓存成失败。
-    // 第一次失败后，用原始路径再试一次。
     if (!img.retryRaw) {
       img.retryRaw = true
       img.src = src
@@ -2621,12 +2797,14 @@ function drawResultPlayer(title, pid, y, h) {
 
 
 
-function drawDayResult() {
 
+function drawDayResult() {
   const selfId = getSelfId()
   const oppId = otherPlayer(selfId)
   const selfPoint = getFinalPoint(game, selfId)
   const oppPoint = getFinalPoint(game, oppId)
+  const selfKcal = getDayTotalKcal(game, selfId)
+  const oppKcal = getDayTotalKcal(game, oppId)
 
   let finalText = '平局'
   let finalSubText = '双方今天吃得不相上下'
@@ -2639,14 +2817,22 @@ function drawDayResult() {
     finalSubText = '对方赢得了这一整局'
   }
 
-  drawRoundRect(20, SAFE_TOP + 48, W - 40, 108, 22, '#FFFFFF', '#111', 3)
-  drawText(finalText, W / 2, SAFE_TOP + 62, 28, selfPoint > oppPoint ? '#E94335' : '#111', 'center', 'bold')
-  drawText(finalSubText, W / 2, SAFE_TOP + 96, 13, '#555', 'center', 'bold')
-  drawText(`你 ${selfPoint} : ${oppPoint} 对手`, W / 2, SAFE_TOP + 118, 22, '#111', 'center', 'bold')
-  drawText(`全日热量：你 ${getDayTotalKcal(game, selfId)} kcal｜对手 ${getDayTotalKcal(game, oppId)} kcal`, W / 2, SAFE_TOP + 142, 11, '#555', 'center', 'bold')
+  const selfWin = selfPoint > oppPoint
+  const oppWin = oppPoint > selfPoint
+  const selfColor = selfWin ? '#E94335' : selfPoint === oppPoint ? '#E94335' : '#888'
+  const oppColor = oppWin ? '#E94335' : selfPoint === oppPoint ? '#E94335' : '#888'
+
+  drawRoundRect(20, SAFE_TOP + 42, W - 40, 126, 22, '#FFFFFF', '#111', 3)
+  drawText(finalText, W / 2, SAFE_TOP + 56, 27, selfWin ? '#E94335' : '#111', 'center', 'bold')
+  drawText(finalSubText, W / 2, SAFE_TOP + 90, 13, '#555', 'center', 'bold')
+
+  // v3.6：最终几比几两边显示双方最终卡路里。
+  drawText(`${selfKcal} kcal`, W * 0.24, SAFE_TOP + 120, 18, selfColor, 'center', 'bold')
+  drawText(`你 ${selfPoint} : ${oppPoint} 对手`, W / 2, SAFE_TOP + 116, 22, '#111', 'center', 'bold')
+  drawText(`${oppKcal} kcal`, W * 0.76, SAFE_TOP + 120, 18, oppColor, 'center', 'bold')
 
   const results = safeArray(game.mealResults)
-  let y = SAFE_TOP + 170
+  let y = SAFE_TOP + 184
   const bottomLimit = H - SAFE_BOTTOM - 104
   const blockH = Math.max(82, Math.min(112, (bottomLimit - y - 18) / meals.length))
 
@@ -2731,11 +2917,17 @@ function drawTopControls() {
 }
 
 
+
 function render() {
   buttons = []
   ctx.clearRect(0, 0, W, H)
   ctx.fillStyle = getPageBg()
   ctx.fillRect(0, 0, W, H)
+
+  if (appMode === 'loading') {
+    drawLoadingScreen()
+    return
+  }
 
   if (appMode === 'home') {
     drawHome()
@@ -2770,6 +2962,17 @@ function render() {
 
 async function handleAction(id) {
   const selfId = getSelfId()
+
+  if (id === 'loading_retry') {
+    retryAssetPreload()
+    return
+  }
+
+  if (id === 'loading_continue') {
+    appMode = 'home'
+    requestRender()
+    return
+  }
 
   const lockedActions = ['draw_meat', 'draw_veg', 'draw_staple', 'draw_dessert', 'stand', 'reveal_night', 'next', 'replay_ready', 'ready']
   const shouldLock = appMode === 'online' && lockedActions.includes(id)
@@ -2961,5 +3164,5 @@ window.addEventListener('orientationchange', () => {
   setTimeout(() => resizeCanvas(true), 360)
 })
 
-preloadGameImages()
+startAssetPreload()
 render()
