@@ -1,27 +1,47 @@
 // game.js
-// 利禄卡 Online v4.0 回归稳定基础版：简单index / 简单viewport / 稳定图片调用
+// 利禄卡 Online v4.1 资源调用稳定版：基于v3.9，不改视口布局
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
 const canvas = document.getElementById('gameCanvas')
 const ctx = canvas.getContext('2d')
 
-let W = window.innerWidth
-let H = window.innerHeight
-
-// v4.0：回归稳定基础版。
-// 不再使用 visualViewport / 100dvh / 复杂安全区计算。
-// 只做简单 DPR 限制，降低 iPhone 高分屏渲染压力。
-let DPR = Math.min(window.devicePixelRatio || 1, 1.6)
-
+let W = 0
+let H = 0
+let DPR = 1
 let SAFE_TOP = 18
 let SAFE_BOTTOM = 18
 let resizeRenderReady = false
 
+function getViewportSize() {
+  const vv = window.visualViewport
+
+  const width = Math.floor((vv && vv.width) || window.innerWidth || document.documentElement.clientWidth || 390)
+  const height = Math.floor((vv && vv.height) || window.innerHeight || document.documentElement.clientHeight || 780)
+
+  return {
+    width: Math.max(320, width),
+    height: Math.max(560, height)
+  }
+}
+
+function getTargetDpr(width, height) {
+  const raw = window.devicePixelRatio || 1
+  const area = width * height
+
+  // iPhone 17 Pro / Pro Max 一类设备 CSS 视口更大、DPR 更高。
+  // 如果继续用 DPR=2 或 3，Canvas 实际像素会很重，容易变形和卡。
+  if (raw >= 3 && area > 380000) return 1.45
+  if (raw >= 3 && area > 330000) return 1.65
+
+  return Math.min(raw, 1.85)
+}
+
 function resizeCanvas(force) {
-  const nextW = Math.max(320, Math.floor(window.innerWidth || document.documentElement.clientWidth || 390))
-  const nextH = Math.max(560, Math.floor(window.innerHeight || document.documentElement.clientHeight || 780))
-  const nextDpr = Math.min(window.devicePixelRatio || 1, 1.6)
+  const size = getViewportSize()
+  const nextW = size.width
+  const nextH = size.height
+  const nextDpr = getTargetDpr(nextW, nextH)
 
   if (!force && W === nextW && H === nextH && Math.abs(DPR - nextDpr) < 0.01) return
 
@@ -29,15 +49,16 @@ function resizeCanvas(force) {
   H = nextH
   DPR = nextDpr
 
-  SAFE_TOP = 18
-  SAFE_BOTTOM = H < 700 ? 14 : 18
+  const vv = window.visualViewport
+  SAFE_TOP = Math.max(18, Math.round(((vv && vv.offsetTop) || 0) + 18))
+  SAFE_BOTTOM = Math.max(18, H < 700 ? 14 : 18)
 
-  canvas.width = Math.floor(W * DPR)
-  canvas.height = Math.floor(H * DPR)
+  canvas.style.width = `${W}px`
+  canvas.style.height = `${H}px`
+  canvas.width = Math.max(1, Math.floor(W * DPR))
+  canvas.height = Math.max(1, Math.floor(H * DPR))
 
-  canvas.style.width = '100vw'
-  canvas.style.height = '100vh'
-
+  // 关键：用 setTransform 重置矩阵，避免 resize 后重复 scale 造成画面变形。
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0)
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'medium'
@@ -162,6 +183,7 @@ let bgmEnabled = true
 let bgmStarted = false
 let bgmLoadFailed = false
 let bgmStatusText = ''
+let bgmUserInteracted = false
 let localReadyLocked = false
 let startRequested = false
 let startOverlayText = ''
@@ -182,6 +204,7 @@ let game = createGame('single')
 
 
 
+
 function initBgm() {
   if (bgm) return
 
@@ -198,13 +221,13 @@ function initBgm() {
 
     bgm.addEventListener('canplaythrough', () => {
       bgmLoadFailed = false
-      if (!bgmStatusText) bgmStatusText = '音乐已加载'
+      if (bgmUserInteracted && !bgmStatusText) bgmStatusText = '音乐已加载'
       requestRender()
     })
 
     bgm.addEventListener('error', () => {
       bgmLoadFailed = true
-      bgmStatusText = '音乐文件未找到'
+      if (bgmUserInteracted) bgmStatusText = '音乐文件未找到'
       requestRender()
     })
 
@@ -212,18 +235,24 @@ function initBgm() {
     bgm.load()
   } catch (err) {
     bgmLoadFailed = true
-    bgmStatusText = '音乐初始化失败'
+    if (bgmUserInteracted) bgmStatusText = '音乐初始化失败'
   }
 }
 
 
 
+
 function startBgm() {
+  bgmUserInteracted = true
   if (!bgmEnabled) return
 
   initBgm()
 
-  if (!bgm || bgmLoadFailed) return
+  if (!bgm || bgmLoadFailed) {
+    bgmStatusText = '音乐文件未找到'
+    requestRender()
+    return
+  }
 
   try {
     bgm.muted = false
@@ -237,7 +266,7 @@ function startBgm() {
     playPromise
       .then(() => {
         bgmStarted = true
-        bgmStatusText = '音乐播放中'
+        bgmStatusText = ''
         requestRender()
       })
       .catch(() => {
@@ -247,21 +276,22 @@ function startBgm() {
       })
   } else {
     bgmStarted = true
-    bgmStatusText = '音乐播放中'
+    bgmStatusText = ''
     requestRender()
   }
 }
 
+
 function toggleBgm() {
+  bgmUserInteracted = true
   initBgm()
 
   if (bgmLoadFailed) {
-    bgmStatusText = '音乐文件未找到：audio/bgm.mp3'
+    bgmStatusText = '音乐文件未找到'
     requestRender()
     return
   }
 
-  // 修复：如果音乐还没真正播放，点击“音乐”按钮应该尝试播放，而不是直接关掉。
   if (!bgmEnabled) {
     bgmEnabled = true
     startBgm()
@@ -276,7 +306,7 @@ function toggleBgm() {
 
   bgmEnabled = false
   if (bgm) bgm.pause()
-  bgmStatusText = '音乐已关闭'
+  bgmStatusText = ''
   requestRender()
 }
 
@@ -1771,11 +1801,16 @@ function requestRender() {
 
 
 
+
 function retryFailedImages() {
   Object.keys(imageCache).forEach(key => {
     const img = imageCache[key]
     if (img && img.failed) {
-      delete imageCache[key]
+      const attempts = img.attempts || 0
+      if (attempts < IMAGE_RETRY_MAX) {
+        delete imageCache[key]
+        getImage(key, true)
+      }
     }
   })
 }
@@ -1789,20 +1824,23 @@ function preloadGameImages() {
   const backs = Object.keys(CARD_BACK_PATHS).map(key => CARD_BACK_PATHS[key])
   const fronts = Object.keys(CARD_IMAGE_PATHS).map(key => CARD_IMAGE_PATHS[key])
 
-  backs.forEach(src => getImage(src))
+  // 卡背优先，保证底牌/隐藏牌先有图。
+  backs.forEach(src => getImage(src, true))
 
+  // 正面卡图后台预热，但不阻塞首页和游戏流程。
+  // 这里保持温和速度，避免 iPhone 刚进页面时抢主线程。
   let index = 0
 
   function step() {
-    const batchSize = 2
+    const batchSize = 3
 
     for (let i = 0; i < batchSize && index < fronts.length; i++) {
-      getImage(fronts[index])
+      getImage(fronts[index], false)
       index += 1
     }
 
     if (index < fronts.length) {
-      setTimeout(step, 160)
+      setTimeout(step, 140)
     }
   }
 
@@ -2018,6 +2056,9 @@ function hitButton(x, y) {
 
 // 图片懒加载
 const imageCache = {}
+const imageRetryTimers = {}
+const IMAGE_RETRY_DELAY = 1200
+const IMAGE_RETRY_MAX = 3
 
 
 
@@ -2026,16 +2067,36 @@ const imageCache = {}
 
 
 
-function getImage(src) {
+function getImage(src, priority) {
   if (!src) return null
 
   const cached = imageCache[src]
-  if (cached && !cached.failed) return cached
+
+  if (cached && cached.loaded) return cached
+
+  // 当前画面正在用的图片优先处理：
+  // 如果之前失败了，超过短暂间隔后允许立即重新请求。
+  if (cached && cached.failed) {
+    const now = Date.now()
+    const last = cached.lastAttempt || 0
+    const attempts = cached.attempts || 0
+
+    if ((priority || now - last > IMAGE_RETRY_DELAY) && attempts < IMAGE_RETRY_MAX) {
+      delete imageCache[src]
+    } else {
+      return cached
+    }
+  } else if (cached) {
+    return cached
+  }
 
   const img = new Image()
   img.loaded = false
   img.failed = false
+  img.attempts = cached && cached.attempts ? cached.attempts + 1 : 1
+  img.lastAttempt = Date.now()
   img.decoding = 'async'
+  img.loading = priority ? 'eager' : 'auto'
 
   img.onload = () => {
     img.loaded = true
@@ -2047,9 +2108,20 @@ function getImage(src) {
     img.loaded = false
     img.failed = true
     scheduleImageRender()
+
+    // 不等用户点击，失败图片自动延迟重试几次。
+    if (img.attempts < IMAGE_RETRY_MAX && !imageRetryTimers[src]) {
+      imageRetryTimers[src] = setTimeout(() => {
+        delete imageRetryTimers[src]
+        if (imageCache[src] && imageCache[src].failed) {
+          delete imageCache[src]
+          getImage(src, false)
+        }
+      }, IMAGE_RETRY_DELAY)
+    }
   }
 
-  // v4.0：只使用原始路径，和早期稳定版一致。
+  // 只使用原始路径，避免部分 iPhone / WebView 对带参数图片请求不稳定。
   img.src = src
 
   imageCache[src] = img
@@ -2061,7 +2133,7 @@ function getImage(src) {
 function drawCard(card, x, y, w, h) {
   const type = normalizeType(card)
   const src = card.hidden ? (CARD_BACK_PATHS[type] || CARD_BACK_PATHS['荤']) : CARD_IMAGE_PATHS[card.name]
-  const img = getImage(src)
+  const img = getImage(src, true)
 
   if (img && img.loaded) {
     const radius = 9
@@ -2342,6 +2414,7 @@ function drawPlayerPanel(pid, label, x, y, w, h, isOpponent) {
 
 
 
+
 function drawCenterPanel(x, y, w, h) {
   const meal = getMeal()
   const selfId = getSelfId()
@@ -2353,9 +2426,9 @@ function drawCenterPanel(x, y, w, h) {
 
   drawText(`${game.mealIndex + 1}/4  ${meal.name}`, x + 16, y + 9, H < 720 ? 17 : 19, '#111', 'left', 'bold')
 
-  // v3.5：警戒线固定在中间框的第二行，宽度跟随外框，避免在某些手机上遮挡标题或提示。
+  // 警戒线固定在中间框第二行，避免不同机型遮挡。
   const barX = x + 16
-  const barY = y + (H < 720 ? 34 : 36)
+  const barY = y + (H < 720 ? 32 : 34)
   const barW = w - 32
   const barH = H < 720 ? 18 : 20
   const r = barH / 2
@@ -2388,8 +2461,18 @@ function drawCenterPanel(x, y, w, h) {
   drawRoundRect(barX, barY, barW, barH, r, null, '#111', 2.5)
   drawText(`警戒线 ${meal.threshold}`, barX + barW / 2, barY + (H < 720 ? 3 : 4), H < 720 ? 10 : 11, '#111', 'center', 'bold')
 
-  const hint = getActionHint(game, selfId)
-  wrapText(hint, x + 16, barY + barH + 6, w - 32, 16, H < 720 ? 11 : 12, '#333', 'bold', 2)
+  let hint = getActionHint(game, selfId)
+
+  // 中间提示不再大段挤在面板里；压缩成长条提示。
+  hint = hint
+    .replace('你的点餐回合：请选择外卖或开吃', '你的回合：选外卖或开吃')
+    .replace('对方点餐回合：请等待对方点外卖或开吃；对方底牌热量未知', '对方点餐中：等待对方操作')
+    .replace('你的点餐回合：你已爆牌，但可以继续叫外卖迷惑对方，或选择开吃', '已爆牌：可继续迷惑，或开吃摊牌')
+
+  const hintH = H < 720 ? 18 : 20
+  const hintY = y + h - hintH - 8
+  drawRoundRect(x + 16, hintY, w - 32, hintH, hintH / 2, '#FFFFFF', '#111', 1.5)
+  drawText(hint, x + w / 2, hintY + (H < 720 ? 3 : 4), H < 720 ? 10 : 11, '#333', 'center', 'bold')
 }
 
 
@@ -2968,15 +3051,21 @@ function scheduleResize(force) {
   resizeTimer = setTimeout(() => {
     resizeTimer = null
     resizeCanvas(Boolean(force))
-  }, force ? 80 : 180)
+  }, force ? 80 : 140)
 }
 
 window.addEventListener('resize', () => scheduleResize(false))
+
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', () => scheduleResize(false))
+  window.visualViewport.addEventListener('scroll', () => scheduleResize(false))
+}
 
 window.addEventListener('orientationchange', () => {
   scheduleResize(true)
   setTimeout(() => resizeCanvas(true), 360)
 })
 
+initBgm()
 preloadGameImages()
 render()

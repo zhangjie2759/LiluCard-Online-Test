@@ -1,39 +1,32 @@
-利禄卡 Online v4.0 回归稳定基础版
+利禄卡 Online v4.1 资源调用稳定版
 
-这版目标：
-不是继续加补丁，而是回到早期图片能稳定显示的基础环境。
+这版基于 v3.9，不再改 index / viewport / canvas 布局，避免 v4.0 那种 UI 变形。
 
-主要变化：
-1. index.html 回退到早期简单结构：
-   - width=100vw
-   - height=100vh
-   - 不再使用 100dvh
-   - 不再使用 position: fixed
-   - 不再使用 viewport-fit=cover / interactive-widget
-
-2. Canvas 适配回归简单：
-   - 不再使用 visualViewport
-   - 不再监听 visualViewport resize / scroll
-   - 只监听 window resize / orientationchange
-   - DPR 简单限制到 1.6
-
-3. 图片调用回归稳定方式：
-   - img.src = 原始路径
+重点优化：
+1. 图片加载：
+   - 继续使用原始路径 img.src = src
    - 不加 ?v 参数
    - 不使用 img.decode()
-   - 不使用 Loading 阻塞
-   - 图片失败后，下次显示会重新请求
+   - 当前画面正在显示的卡牌会优先加载
+   - 图片失败后会自动延迟重试，不再永久缓存失败状态
+   - 后台预热仍然保留，但不阻塞首页和游戏
 
-4. 资源竞争降低：
-   - 背景图预热变保守
-   - 音乐不再在进入游戏时自动抢加载
-   - 只有点“音乐”按钮才启动音乐
+2. 音乐：
+   - 页面打开时只预创建/预加载音频，不播放
+   - 只有点击“音乐”按钮才尝试播放
+   - 音乐失败不会影响游戏流程
+   - 不再每次触摸都反复 play，减少 iPhone 音频状态混乱
 
-5. 保留：
-   - 联机功能
-   - 顶部按钮
+3. 中间提示优化：
+   - “你的点餐回合：请选择...” 改成更短的“你的回合：选外卖或开吃”
+   - 固定在中间框底部小提示条里
+   - 字号更小，位置更稳，不再挤压警戒线
+
+4. 保留：
+   - v3.9 的 UI/视口/布局结构
+   - 联机同步逻辑
    - 结算逻辑
-   - 移动端基本 DPR 限制
+   - 顶部按钮最上层
 
 不包含 audio 文件夹。
 
@@ -47,4 +40,4 @@
 - 如果需要音乐，请你自己保留 audio/bgm.mp3
 
 上传后用这个链接测试：
-https://zhangjie2759.github.io/LiluCard-Online-Test/?v=42
+https://zhangjie2759.github.io/LiluCard-Online-Test/?v=43
