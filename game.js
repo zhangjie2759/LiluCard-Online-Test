@@ -1,5 +1,5 @@
 // game.js
-// 利禄卡 Online v2.4 信息隐藏与流程提示修复版
+// 利禄卡 Online v2.5 对方明牌与等待提示修复版
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -796,7 +796,7 @@ function getActionHint(g, selfId) {
       return '你的点餐回合：请选择外卖或收手'
     }
 
-    return '对方点餐回合：请等待对方点外卖或收手'
+    return '对方点餐回合：请等待对方点外卖或收手；对方底牌热量未知'
   }
 
   if (g.phase === 'night_picking') {
@@ -1592,6 +1592,7 @@ function getDisplayPlayerIds() {
 
 
 
+
 function drawPlayerPanel(pid, label, x, y, w, h, isOpponent) {
   const player = game.players[pid]
   const meal = getMeal()
@@ -1599,27 +1600,29 @@ function drawPlayerPanel(pid, label, x, y, w, h, isOpponent) {
   const inResultPhase = game.phase === 'meal_result' || game.phase === 'day_result'
   const hiddenForOpponent = isOpponent && !inResultPhase
 
-  const displayCards = safeArray(player.cards).map(card => {
+  const displayCards = safeArray(player.cards).map((card, index) => {
     const next = { ...card }
 
-    // v2.4：对方当前局信息全部隐藏，避免提前知道具体热量/爆牌。
-    // 结算页再完整公开。
-    if (hiddenForOpponent) {
+    // v2.5：对方只有第一张底牌隐藏，后续外卖牌都明牌。
+    // 自己的底牌自己可见；结算页全部公开。
+    if (hiddenForOpponent && next.privateCard) {
       next.hidden = true
+    } else if (!inResultPhase) {
+      next.hidden = false
     }
 
     return next
   })
 
   const total = calcCardsKcal(player.cards)
-  const visibleTotal = hiddenForOpponent ? 0 : total
+  const visibleTotal = hiddenForOpponent ? getVisibleKcal(displayCards) : total
 
   const bg = isOpponent ? '#EFE9DF' : '#FFFFFF'
 
   let status = '观察中'
 
   if (hiddenForOpponent) {
-    // 不显示对方是否爆牌。
+    // 结算前仍然不暴露对方是否爆牌。
     status = player.stood
       ? '已收手'
       : game.phase === 'meal_playing' && game.turn === pid
@@ -1645,7 +1648,7 @@ function drawPlayerPanel(pid, label, x, y, w, h, isOpponent) {
   drawText(status, x + 76, y + 18, 14, status === '爆牌' ? '#E94335' : '#111', 'left', 'bold')
 
   const kcalText = hiddenForOpponent
-    ? `热量未知`
+    ? `? + ${visibleTotal} kcal`
     : `${total}/${meal.threshold} kcal`
 
   drawText(kcalText, x + w - 16, y + 15, 16, status === '爆牌' ? '#E94335' : '#111', 'right', 'bold')
@@ -1772,8 +1775,35 @@ function drawGameScreen() {
   drawPlayerPanel(ids.self, '你', 16, selfY, W - 32, zoneH, false)
 
   drawActionButtons()
+  drawWaitingOpponentFloat()
 }
 
+
+
+function drawWaitingOpponentFloat() {
+  if (appMode !== 'online') return
+  if (game.phase !== 'meal_playing') return
+
+  const selfId = getSelfId()
+  const oppId = otherPlayer(selfId)
+
+  if (game.turn !== oppId) return
+  if (game.players[selfId] && game.players[selfId].stood) return
+
+  const boxW = Math.min(W - 88, 260)
+  const boxH = 74
+  const x = (W - boxW) / 2
+  const y = Math.max(SAFE_TOP + 150, H * 0.44 - boxH / 2)
+
+  ctx.save()
+  ctx.globalAlpha = 0.96
+  drawRoundRect(x + 5, y + 6, boxW, boxH, 22, '#111', null, 0)
+  drawRoundRect(x, y, boxW, boxH, 22, '#FFF6E8', '#111', 3)
+  ctx.restore()
+
+  drawText('对方点餐中', W / 2, y + 14, 25, '#E94335', 'center', 'bold')
+  drawText('请等待对方点外卖或收手', W / 2, y + 48, 12, '#333', 'center', 'bold')
+}
 
 function drawMealResult() {
   const result = game.lastMealResult
