@@ -1,5 +1,5 @@
 // game.js
-// 利禄卡 Online v2.5 对方明牌与等待提示修复版
+// 利禄卡 Online v2.6 夜宵展示与提示修复版
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -743,6 +743,7 @@ function settleMeal(g) {
 // =========================
 
 
+
 function canPlayerAct(g, pid) {
   if (g.phase === 'opening') {
     return safeArray(g.players[pid].cards).length < 2
@@ -759,6 +760,7 @@ function canPlayerAct(g, pid) {
 
   return false
 }
+
 
 
 function getActionHint(g, selfId) {
@@ -805,7 +807,11 @@ function getActionHint(g, selfId) {
 
     if (remain > 0) return `夜宵阶段：不分先后，你还要选择 ${remain} 单`
     if (oppRemain > 0) return '你已选完夜宵，等待对方选完'
-    return '双方夜宵已选完，正在揭晓'
+    return '双方夜宵已选完，点击展示夜宵'
+  }
+
+  if (g.phase === 'night_ready') {
+    return '双方夜宵已选完，点击“展示夜宵”后统一揭晓'
   }
 
   if (g.phase === 'meal_result') {
@@ -817,6 +823,7 @@ function getActionHint(g, selfId) {
 
   return g.message || ''
 }
+
 
 
 function applyDraw(g, pid, type) {
@@ -860,7 +867,7 @@ function applyDraw(g, pid, type) {
 
     g.message = `${getPlayerName(pid)}点了一单${type}外卖`
 
-    // v2.4：只有双方都主动收手，才进入本餐结算。
+    // 只有双方都主动收手，才进入本餐结算。
     if (g.players.p1.stood && g.players.p2.stood) {
       settleMeal(g)
     } else {
@@ -883,7 +890,9 @@ function applyDraw(g, pid, type) {
     g.message = `${getPlayerName(pid)}选择了一单夜宵；剩余 ${remain} 单`
 
     if (getRemainingOrders(g, 'p1') <= 0 && getRemainingOrders(g, 'p2') <= 0) {
-      revealNightAndSettle(g)
+      g.phase = 'night_ready'
+      g.turn = null
+      g.message = '双方夜宵已选完，点击展示夜宵'
     }
 
     g.actionSeq += 1
@@ -1662,7 +1671,7 @@ function drawPlayerPanel(pid, label, x, y, w, h, isOpponent) {
 
   let cardsToDraw = displayCards
 
-  if (game.phase === 'night_picking' && safeArray(player.nightChoices).length > 0) {
+  if ((game.phase === 'night_picking' || game.phase === 'night_ready') && safeArray(player.nightChoices).length > 0) {
     cardsToDraw = safeArray(player.nightChoices).map((type, index) => ({
       id: `night_${index}`,
       name: `夜宵${index + 1}`,
@@ -1691,6 +1700,7 @@ function drawCenterPanel(x, y, w, h) {
 }
 
 
+
 function drawActionButtons() {
   const y = H - SAFE_BOTTOM - 86
   const gap = 10
@@ -1715,17 +1725,23 @@ function drawActionButtons() {
     return
   }
 
+  if (game.phase === 'night_ready') {
+    addButton('noop', '荤', leftX, y, smallW, smallH, '#ddd', '#555', 18)
+    addButton('noop', '素', leftX + smallW + smallGap, y, smallW, smallH, '#ddd', '#555', 18)
+    addButton('noop', '主食', leftX, y + smallH + smallGap, smallW, smallH, '#ddd', '#555', 18)
+    addButton('noop', '甜点', leftX + smallW + smallGap, y + smallH + smallGap, smallW, smallH, '#ddd', '#555', 18)
+    addButton('reveal_night', '展示夜宵', leftX + leftW + gap, y, rightW, 72, '#FFE169', '#111', 22)
+    drawText('双方已选完夜宵，点击展示', leftX + leftW + gap + rightW / 2, y + 50, 10, '#5C4300', 'center', 'bold')
+    return
+  }
+
   const canAct = canPlayerAct(game, selfId)
   const disabledFill = '#ddd'
   const disabledColor = '#666'
 
+  // v2.6：轮到自己时不再出现红色提示；只在等待对方时强化说明。
   if (game.phase === 'meal_playing' && game.turn === oppId && !game.players[selfId].stood) {
     drawText('对方点餐回合，请等待对方操作', W / 2, y - 24, 13, '#E94335', 'center', 'bold')
-  } else if (game.phase === 'meal_playing' && game.turn === selfId) {
-    const tip = (game.players[selfId].busted || isBusted(game, selfId))
-      ? '你已爆牌：仍可继续叫外卖迷惑对方'
-      : '轮到你点外卖'
-    drawText(tip, W / 2, y - 24, 13, '#E94335', 'center', 'bold')
   }
 
   addButton(canAct ? 'draw_meat' : 'noop', '荤', leftX, y, smallW, smallH, canAct ? TYPE_COLORS['荤'] : disabledFill, canAct ? '#111' : disabledColor, 18)
@@ -1740,7 +1756,7 @@ function drawActionButtons() {
     standSub = '双方可同时抽'
   } else if (game.phase === 'night_picking') {
     standText = '夜宵'
-    standSub = '选完自动揭晓'
+    standSub = '选完后展示'
   } else if (game.phase === 'meal_playing') {
     if (game.turn === selfId) {
       standText = '收手'
@@ -1779,6 +1795,14 @@ function drawGameScreen() {
 }
 
 
+
+
+function applyRevealNight(g) {
+  if (g.phase !== 'night_ready') return
+
+  revealNightAndSettle(g)
+  g.actionSeq += 1
+}
 
 function drawWaitingOpponentFloat() {
   if (appMode !== 'online') return
@@ -1945,8 +1969,12 @@ function drawDayResult() {
 // 渲染入口
 // =========================
 
+
 function drawOverlayIfNeeded() {
   if (Date.now() > startOverlayUntil || !startOverlayText) return
+
+  // v2.6：正式开局后不再显示“开始”遮罩，避免误以为不能操作。
+  if (game && game.phase && game.phase !== 'lobby') return
 
   ctx.save()
   ctx.fillStyle = 'rgba(0,0,0,0.18)'
@@ -2033,8 +2061,9 @@ async function handleAction(id) {
   if (id === 'draw_staple') applyDraw(game, selfId, '主食')
   if (id === 'draw_dessert') applyDraw(game, selfId, '甜点')
   if (id === 'stand') applyStand(game, selfId)
+  if (id === 'reveal_night') applyRevealNight(game)
 
-  if (['draw_meat', 'draw_veg', 'draw_staple', 'draw_dessert', 'stand'].includes(id)) {
+  if (['draw_meat', 'draw_veg', 'draw_staple', 'draw_dessert', 'stand', 'reveal_night'].includes(id)) {
     singleAfterPlayerAction()
 
     if (appMode === 'online') await saveOnlineGame()
