@@ -1,5 +1,5 @@
 // game.js
-// 利禄卡 Online v3.7 预加载超时修复版
+// 利禄卡 Online v3.8 图片加载回滚稳定版
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -163,7 +163,7 @@ const TYPE_TEXT_COLORS = {
   '甜点': '#063D66'
 }
 
-let appMode = 'loading' // loading / home / single / online
+let appMode = 'home' // home / single / online
 let myPlayerId = 'p1'
 let roomId = ''
 let roomData = null
@@ -2040,12 +2040,31 @@ function retryFailedImages() {
 
 
 
+
 function preloadGameImages() {
-  // v3.6：实际预加载由 loading 页 startAssetPreload 完成。
-  // 这里保留函数，避免旧调用报错；如果中途有遗漏图片，会由 getImage 按需补载。
-  getAllImageSources().forEach(src => {
-    if (!imageCache[src]) getImage(src)
-  })
+  const backs = Object.keys(CARD_BACK_PATHS).map(key => CARD_BACK_PATHS[key])
+  const fronts = Object.keys(CARD_IMAGE_PATHS).map(key => CARD_IMAGE_PATHS[key])
+
+  // 先预热卡背，保证隐藏牌尽快出现。
+  backs.forEach(src => getImage(src))
+
+  // 正面卡图后台轻量预热，不阻塞进入首页。
+  let index = 0
+
+  function step() {
+    const batchSize = 3
+
+    for (let i = 0; i < batchSize && index < fronts.length; i++) {
+      getImage(fronts[index])
+      index += 1
+    }
+
+    if (index < fronts.length) {
+      setTimeout(step, 100)
+    }
+  }
+
+  setTimeout(step, 120)
 }
 
 // =========================
@@ -2098,7 +2117,7 @@ function getMealTheme(index) {
 }
 
 function getPageBg() {
-  if (appMode === 'loading' || appMode === 'home' || !game) return '#F7F1E8'
+  if (appMode === 'home' || !game) return '#F7F1E8'
   return getMealTheme(game.mealIndex).bg
 }
 
@@ -2250,16 +2269,14 @@ const imageCache = {}
 
 
 
+
 function getImage(src) {
   if (!src) return null
-
-  const cacheKey = src
-  if (imageCache[cacheKey]) return imageCache[cacheKey]
+  if (imageCache[src]) return imageCache[src]
 
   const img = new Image()
   img.loaded = false
   img.failed = false
-  img.retryRaw = false
   img.decoding = 'async'
   img.loading = 'eager'
 
@@ -2270,21 +2287,16 @@ function getImage(src) {
   }
 
   img.onerror = () => {
-    if (!img.retryRaw) {
-      img.retryRaw = true
-      img.src = src
-      return
-    }
-
     img.loaded = false
     img.failed = true
     requestRender()
   }
 
-  const connector = src.indexOf('?') >= 0 ? '&' : '?'
-  img.src = `${src}${connector}${IMAGE_CACHE_VERSION}`
+  // v3.8：回滚到最稳定的原始路径，不再默认添加 ?v 参数。
+  // 之前某些 iPhone WebView 对带参数的图片请求不稳定。
+  img.src = src
 
-  imageCache[cacheKey] = img
+  imageCache[src] = img
   return img
 }
 
@@ -2975,16 +2987,12 @@ function drawTopControls() {
 
 
 
+
 function render() {
   buttons = []
   ctx.clearRect(0, 0, W, H)
   ctx.fillStyle = getPageBg()
   ctx.fillRect(0, 0, W, H)
-
-  if (appMode === 'loading') {
-    drawLoadingScreen()
-    return
-  }
 
   if (appMode === 'home') {
     drawHome()
@@ -3019,18 +3027,6 @@ function render() {
 
 async function handleAction(id) {
   const selfId = getSelfId()
-
-  if (id === 'loading_retry') {
-    retryAssetPreload()
-    return
-  }
-
-  if (id === 'loading_continue') {
-    appMode = 'home'
-    loadingDone = true
-    requestRender()
-    return
-  }
 
   const lockedActions = ['draw_meat', 'draw_veg', 'draw_staple', 'draw_dessert', 'stand', 'reveal_night', 'next', 'replay_ready', 'ready']
   const shouldLock = appMode === 'online' && lockedActions.includes(id)
@@ -3222,5 +3218,5 @@ window.addEventListener('orientationchange', () => {
   setTimeout(() => resizeCanvas(true), 360)
 })
 
-startAssetPreload()
+preloadGameImages()
 render()

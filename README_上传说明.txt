@@ -1,18 +1,28 @@
-利禄卡 Online v3.7 预加载超时修复版
+利禄卡 Online v3.8 图片加载回滚稳定版
 
-这版修复：安卓马上进入，但苹果一直卡在 loading 且没有进度。
+这版是“回退式修复”，目标是回到以前更稳定的图片调用方式。
 
-原因：
-部分 iPhone / Safari / 微信 WebView 图片请求可能既不触发 onload，也不触发 onerror。
-v3.6 的 Loading 会等待每张图返回结果，因此某些 iPhone 会卡在 0%。
+修复思路：
+1. 删除强制 Loading 阻塞
+   - 不再必须等所有图片加载完才进入首页。
+   - 打开后直接进首页，图片后台预热。
 
-v3.7 修复：
-1. 每张图片增加 2.6 秒超时。
-2. 带版本号路径失败/超时后，会自动尝试原始路径。
-3. 每张图片最多重试 1 次，避免无限等待。
-4. Loading 超过 3.2 秒会出现“重试 / 跳过”按钮。
-5. 点击“跳过”可先进入首页，后续图片仍然会按需加载。
-6. 不包含 audio 文件夹。
+2. 图片路径回滚为原始路径
+   - 不再默认给图片加 ?v 参数。
+   - 因为部分 iPhone / 微信 WebView 对带参数图片请求可能不稳定。
+
+3. 删除复杂图片加载链路
+   - 不依赖 img.decode()
+   - 不依赖 loading 超时判断
+   - 不把游戏入口绑定在图片回调上
+
+4. 保留必要优化
+   - 保留 DPR / 视口适配
+   - 保留图片失败占位
+   - 保留后台预热卡背和卡图
+   - 保留 BGM 逻辑，但音乐不参与加载判断
+
+5. 不包含 audio 文件夹。
 
 上传到 GitHub 仓库根目录，替换：
 - index.html
@@ -24,4 +34,7 @@ v3.7 修复：
 - 如果需要音乐，请你自己保留 audio/bgm.mp3
 
 上传后用这个链接测试：
-https://zhangjie2759.github.io/LiluCard-Online-Test/?v=39
+https://zhangjie2759.github.io/LiluCard-Online-Test/?v=40
+
+如果 iPhone 仍不显示，请直接打开原始图片路径测试：
+https://zhangjie2759.github.io/LiluCard-Online-Test/images/cards/chicken_wing.png
