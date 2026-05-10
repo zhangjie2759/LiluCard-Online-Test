@@ -1,5 +1,5 @@
 // game.js
-// 利禄卡 Online v2.9 BGM 版：加入循环背景音乐
+// 利禄卡 Online v3.0 iPhone流畅优化版：DPR限制 / 渐进加载 / 卡牌信息增强
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -8,11 +8,16 @@ const ctx = canvas.getContext('2d')
 
 let W = window.innerWidth
 let H = window.innerHeight
-const DPR = window.devicePixelRatio || 1
 
-canvas.width = W * DPR
-canvas.height = H * DPR
+// iPhone 的 devicePixelRatio 通常是 3，Canvas 实际绘制像素会变成 9 倍，容易卡。
+// 限制到 2 可以明显降低渲染压力，同时保留较清晰的文字和卡面。
+const DPR = Math.min(window.devicePixelRatio || 1, 2)
+
+canvas.width = Math.floor(W * DPR)
+canvas.height = Math.floor(H * DPR)
 ctx.scale(DPR, DPR)
+ctx.imageSmoothingEnabled = true
+ctx.imageSmoothingQuality = 'medium'
 
 const SAFE_TOP = 18
 const SAFE_BOTTOM = 18
@@ -1627,13 +1632,32 @@ function requestRender() {
   }
 }
 
+
 function preloadGameImages() {
-  const srcs = []
+  const backs = Object.keys(CARD_BACK_PATHS).map(key => CARD_BACK_PATHS[key])
+  const fronts = Object.keys(CARD_IMAGE_PATHS).map(key => CARD_IMAGE_PATHS[key])
 
-  Object.keys(CARD_IMAGE_PATHS).forEach(key => srcs.push(CARD_IMAGE_PATHS[key]))
-  Object.keys(CARD_BACK_PATHS).forEach(key => srcs.push(CARD_BACK_PATHS[key]))
+  // 先加载 4 张卡背，保证底牌/对方隐藏牌不会空白。
+  backs.forEach(src => getImage(src))
 
-  srcs.forEach(src => getImage(src))
+  // 正面卡图不要一次性全部解码，iPhone 刚进游戏会卡。
+  // 分批渐进加载，每批 2 张。
+  let index = 0
+
+  function step() {
+    const batchSize = 2
+
+    for (let i = 0; i < batchSize && index < fronts.length; i++) {
+      getImage(fronts[index])
+      index += 1
+    }
+
+    if (index < fronts.length) {
+      setTimeout(step, 120)
+    }
+  }
+
+  setTimeout(step, 180)
 }
 
 // =========================
@@ -1834,6 +1858,7 @@ function hitButton(x, y) {
 // 图片懒加载
 const imageCache = {}
 
+
 function getImage(src) {
   if (!src) return null
   if (imageCache[src]) return imageCache[src]
@@ -1841,10 +1866,25 @@ function getImage(src) {
   const img = new Image()
   img.loaded = false
   img.failed = false
+  img.decoding = 'async'
+  img.loading = 'eager'
 
   img.onload = () => {
-    img.loaded = true
-    requestRender()
+    // Safari 对 decode 支持不稳定，所以失败也直接标记 loaded。
+    if (img.decode) {
+      img.decode()
+        .then(() => {
+          img.loaded = true
+          requestRender()
+        })
+        .catch(() => {
+          img.loaded = true
+          requestRender()
+        })
+    } else {
+      img.loaded = true
+      requestRender()
+    }
   }
 
   img.onerror = () => {
@@ -1856,6 +1896,7 @@ function getImage(src) {
   imageCache[src] = img
   return img
 }
+
 
 function drawCard(card, x, y, w, h) {
   const type = normalizeType(card)
@@ -1900,28 +1941,52 @@ function drawCard(card, x, y, w, h) {
 
     if (!card.hidden) drawRoundRect(x, y, w, h, radius, null, '#111', 2)
 
-    if (card.privateCard && !card.hidden) {
-      drawRoundRect(x + 5, y + 5, 32, 18, 7, '#111', null, 0)
-      drawText('底牌', x + 21, y + 8, 10, '#fff', 'center', 'bold')
+    // v3.0：卡牌缩小后，原图文字会难读；叠加一个轻量 kcal/name 标签。
+    if (!card.hidden) {
+      const badgeH = w < 42 ? 14 : 17
+      const badgeY = y + h - badgeH - 3
+      const badgeText = w < 42 ? `${card.kcal}` : `${card.kcal}kcal`
+
+      ctx.save()
+      ctx.globalAlpha = 0.92
+      drawRoundRect(x + 4, badgeY, w - 8, badgeH, 7, '#111', null, 0)
+      ctx.restore()
+      drawText(badgeText, x + w / 2, badgeY + (w < 42 ? 2 : 3), w < 42 ? 9 : 10, '#fff', 'center', 'bold')
+
+      if (w >= 46) {
+        const nameText = String(card.name || '').slice(0, 4)
+        ctx.save()
+        ctx.globalAlpha = 0.86
+        drawRoundRect(x + 4, y + 4, w - 8, 15, 7, '#FFFFFF', null, 0)
+        ctx.restore()
+        drawText(nameText, x + w / 2, y + 6, 9, '#111', 'center', 'bold')
+      }
+    }
+
+    if (card.privateCard && !card.hidden && w >= 48) {
+      drawRoundRect(x + 5, y + 22, 30, 16, 7, '#111', null, 0)
+      drawText('底牌', x + 20, y + 25, 9, '#fff', 'center', 'bold')
     }
 
     return
   }
 
   drawRoundRect(x, y, w, h, 10, TYPE_COLORS[type] || '#fff', '#111', 2)
-  drawText(card.hidden ? '背面' : card.name, x + w / 2, y + h / 2 - 12, 12, '#111', 'center', 'bold')
+  drawText(card.hidden ? '背面' : String(card.name || '').slice(0, 4), x + w / 2, y + h / 2 - 12, 12, '#111', 'center', 'bold')
   if (!card.hidden) drawText(`${card.kcal}kcal`, x + w / 2, y + h - 20, 11, '#111', 'center', 'bold')
 }
+
 
 function drawCards(cards, x, y, areaW, areaH) {
   const list = safeArray(cards)
   if (list.length === 0) return
 
   const gap = 4
-  let cardW = 62
-  if (list.length > 4) cardW = 52
-  if (list.length > 6) cardW = 44
-  if (list.length > 8) cardW = 38
+  let cardW = 64
+  if (list.length > 4) cardW = 54
+  if (list.length > 6) cardW = 47
+  if (list.length > 8) cardW = 42
+  if (list.length > 10) cardW = 38
 
   const perRow = Math.max(3, Math.floor((areaW + gap) / (cardW + gap)))
   const rows = Math.ceil(list.length / perRow)

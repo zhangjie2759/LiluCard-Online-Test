@@ -1,26 +1,37 @@
-利禄卡 Online v2.9 BGM v31 完整替换包
+利禄卡 Online v3.0 iPhone流畅优化版
 
-这版修复：
-1. 点“音乐”按钮不会再把刚启动的音乐立刻关掉。
-2. 如果音乐还没有播放，点“播放音乐”会尝试播放。
-3. 如果 audio/bgm.mp3 没找到，会在左上角显示“音乐文件未找到”。
-4. index.html 已更新到 game.js?v=31 / online.js?v=31，减少缓存问题。
+针对 iPhone 单机也卡、刚进卡、卡牌信息读不清做了优化：
 
-你仍然需要上传真实音乐文件：
-audio/bgm.mp3
+1. Canvas DPR 限制到最高 2
+   - iPhone 原本常见 DPR=3，实际渲染像素约 9 倍
+   - 限制后渲染压力明显下降，同时保留清晰度
 
-注意：
-- 文件夹必须叫 audio
-- 文件必须叫 bgm.mp3
-- 大小写必须完全一致
-- 不要只上传 zip 本身
-- 手机必须点一次按钮后才能播放
+2. 图片改为渐进预加载
+   - 先加载 4 张卡背
+   - 正面卡图分批加载，不再刚进入就一次性解码全部图片
+   - 减少刚进游戏卡顿
 
-上传后测试：
-https://zhangjie2759.github.io/LiluCard-Online-Test/?v=31
+3. 卡牌信息增强
+   - 卡牌缩小时会叠加 kcal 标签
+   - 尺寸允许时会叠加简短菜名
+   - 解决放久/卡牌多时看不清卡片信息的问题
 
-额外检查：
-直接打开这个地址，看音乐文件是否存在：
-https://zhangjie2759.github.io/LiluCard-Online-Test/audio/bgm.mp3
+4. iPhone 解码优化
+   - 使用 decoding='async'
+   - 图片加载后节流重绘，减少连续 render
 
-如果这个地址打不开或 404，说明音乐路径没有放对。
+5. 联机轮询从 200ms 降到 420ms
+   - 减少 iPhone 后台请求和重绘压力
+   - 保留点击后主动同步机制，不完全依赖轮询
+
+上传到 GitHub 仓库根目录，替换：
+- index.html
+- game.js
+- online.js
+
+继续保留：
+- images/cards 文件夹
+- audio/bgm.mp3
+
+上传后用这个链接测试：
+https://zhangjie2759.github.io/LiluCard-Online-Test/?v=32
