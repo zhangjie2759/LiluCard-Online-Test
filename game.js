@@ -1,5 +1,5 @@
 // game.js
-// 利禄卡 Online v2.3 稳定体验修复版
+// 利禄卡 Online v2.4 信息隐藏与流程提示修复版
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -272,9 +272,12 @@ function isBusted(g, pid) {
   return calcCardsKcal(g.players[pid].cards) > meal.threshold
 }
 
+
 function isEnded(g, pid) {
   const p = g.players[pid]
-  return Boolean(p.stood || p.busted || isBusted(g, pid))
+  // v2.4：爆牌不再自动结束。
+  // 玩家可以继续叫外卖来迷惑对方，只有主动收手才算结束。
+  return Boolean(p.stood)
 }
 
 function getRemainingOrders(g, pid) {
@@ -739,13 +742,14 @@ function settleMeal(g) {
 // 玩家操作
 // =========================
 
+
 function canPlayerAct(g, pid) {
   if (g.phase === 'opening') {
     return safeArray(g.players[pid].cards).length < 2
   }
 
   if (g.phase === 'meal_playing') {
-    if (isEnded(g, pid)) return false
+    if (g.players[pid].stood) return false
     return g.turn === pid
   }
 
@@ -755,6 +759,7 @@ function canPlayerAct(g, pid) {
 
   return false
 }
+
 
 function getActionHint(g, selfId) {
   const oppId = otherPlayer(selfId)
@@ -774,16 +779,23 @@ function getActionHint(g, selfId) {
     const count = safeArray(self.cards).length
     const oppCount = safeArray(opp.cards).length
 
-    if (count < 2) return `起手阶段：请抽满2张起手牌，目前 ${count}/2`
-    if (oppCount < 2) return '你已抽满起手牌，等待对方抽满'
+    if (count < 2) return `起手阶段：你可以直接抽牌，目前 ${count}/2`
+    if (oppCount < 2) return '你已抽满起手牌，等待对方出牌'
     return '双方起手完成，准备进入点餐回合'
   }
 
   if (g.phase === 'meal_playing') {
-    if (self.busted) return '你已爆牌，等待对方结束后自动结算'
-    if (self.stood) return '你已收手，等待对方继续点餐或收手'
-    if (opp.stood || opp.busted) return '对方已结束，你可以继续点外卖，或选择收手结算'
-    if (g.turn === selfId) return '你的点餐回合：请选择外卖或收手'
+    if (self.stood) return '你已收手，等待对方继续点外卖或收手'
+    if (opp.stood && g.turn === selfId) return '对方已收手，你可以继续点外卖，或选择收手结算'
+
+    if (g.turn === selfId) {
+      if (self.busted || isBusted(g, selfId)) {
+        return '你的点餐回合：你已爆牌，但可以继续叫外卖迷惑对方，或选择收手'
+      }
+
+      return '你的点餐回合：请选择外卖或收手'
+    }
+
     return '对方点餐回合：请等待对方点外卖或收手'
   }
 
@@ -806,6 +818,7 @@ function getActionHint(g, selfId) {
   return g.message || ''
 }
 
+
 function applyDraw(g, pid, type) {
   if (!canPlayerAct(g, pid)) return
 
@@ -818,10 +831,12 @@ function applyDraw(g, pid, type) {
     g.players[pid].cards.push(card)
 
     if (isBusted(g, pid)) {
+      // 只有自己界面会通过自己的总热量知道爆牌；
+      // 不在共享 message 里暴露给对方。
       g.players[pid].busted = true
     }
 
-    g.message = `${getPlayerName(pid)}抽起手牌：${card.name}`
+    g.message = `${getPlayerName(pid)}抽了一张起手牌`
 
     enterMealPlayingIfReady(g)
     g.actionSeq += 1
@@ -838,21 +853,19 @@ function applyDraw(g, pid, type) {
     g.players[pid].ordersUsed += 1
     g.records[pid].dayOrdersUsed += 1
 
-    g.message = `${getPlayerName(pid)}点了${type}外卖：${card.name} +${card.kcal} kcal`
-
     if (isBusted(g, pid)) {
+      // v2.4：爆牌只记录在状态里，不自动结束，也不广播给对方。
       g.players[pid].busted = true
-      g.message += '，爆牌了'
     }
 
-    if (isEnded(g, 'p1') && isEnded(g, 'p2')) {
+    g.message = `${getPlayerName(pid)}点了一单${type}外卖`
+
+    // v2.4：只有双方都主动收手，才进入本餐结算。
+    if (g.players.p1.stood && g.players.p2.stood) {
       settleMeal(g)
-    } else if (g.players[pid].busted) {
-      const other = otherPlayer(pid)
-      if (!isEnded(g, other)) g.turn = other
     } else {
       const other = otherPlayer(pid)
-      g.turn = isEnded(g, other) ? pid : other
+      g.turn = g.players[other].stood ? pid : other
       g.message += `，${getPlayerName(g.turn)}点餐回合`
     }
 
@@ -867,7 +880,7 @@ function applyDraw(g, pid, type) {
     g.records[pid].dayOrdersUsed += 1
 
     const remain = getRemainingOrders(g, pid)
-    g.message = `${getPlayerName(pid)}选择夜宵：${type}；剩余 ${remain} 单`
+    g.message = `${getPlayerName(pid)}选择了一单夜宵；剩余 ${remain} 单`
 
     if (getRemainingOrders(g, 'p1') <= 0 && getRemainingOrders(g, 'p2') <= 0) {
       revealNightAndSettle(g)
@@ -877,6 +890,7 @@ function applyDraw(g, pid, type) {
   }
 }
 
+
 function applyStand(g, pid) {
   if (g.phase === 'opening') {
     g.message = '起手阶段请先抽满2张起手牌'
@@ -884,16 +898,25 @@ function applyStand(g, pid) {
   }
 
   if (g.phase === 'meal_playing') {
-    if (isEnded(g, pid)) return
+    if (g.players[pid].stood) return
+
+    if (safeArray(g.players[pid].cards).length < 2) {
+      g.message = `${getPlayerName(pid)}还没抽满起手牌`
+      return
+    }
+
+    if (isBusted(g, pid)) {
+      g.players[pid].busted = true
+    }
 
     g.players[pid].stood = true
     g.message = `${getPlayerName(pid)}选择收手`
 
-    if (isEnded(g, 'p1') && isEnded(g, 'p2')) {
+    if (g.players.p1.stood && g.players.p2.stood) {
       settleMeal(g)
     } else {
       const other = otherPlayer(pid)
-      if (!isEnded(g, other)) g.turn = other
+      if (!g.players[other].stood) g.turn = other
     }
 
     g.actionSeq += 1
@@ -958,7 +981,7 @@ function applyNext(g, pid) {
 function createReplayGameFrom(g) {
   const fresh = createGame(appMode === 'online' ? 'online' : 'single')
   fresh.phase = 'opening'
-  fresh.message = '新一局开始：早餐起手阶段，双方各抽2张'
+  fresh.message = '新一局开始：早餐起手阶段，双方可以同时抽2张'
   fresh.actionSeq = Number(g.actionSeq || 0) + 1
   fresh.nextReady = { p1: false, p2: false }
   fresh.replayReady = { p1: false, p2: false }
@@ -977,7 +1000,7 @@ function applyReplayReady(pid) {
 
   if (game.replayReady.p1 && game.replayReady.p2) {
     game = createReplayGameFrom(game)
-    showStartOverlay('双方已准备，开始下一局...', 1200)
+    // v2.4：下一整局直接进入起手阶段，不再弹出“双方已准备”覆盖层。
   } else {
     game.message = `${getPlayerName(pid)}已准备下一局，等待对方准备`
     game.actionSeq += 1
@@ -1568,17 +1591,20 @@ function getDisplayPlayerIds() {
 }
 
 
+
 function drawPlayerPanel(pid, label, x, y, w, h, isOpponent) {
   const player = game.players[pid]
   const meal = getMeal()
 
-  const hiddenForOpponent = isOpponent && game.phase !== 'meal_result' && game.phase !== 'day_result'
+  const inResultPhase = game.phase === 'meal_result' || game.phase === 'day_result'
+  const hiddenForOpponent = isOpponent && !inResultPhase
 
   const displayCards = safeArray(player.cards).map(card => {
     const next = { ...card }
 
-    // 对方视角：底牌必须显示背面，不能直接看到。
-    if (hiddenForOpponent && next.privateCard) {
+    // v2.4：对方当前局信息全部隐藏，避免提前知道具体热量/爆牌。
+    // 结算页再完整公开。
+    if (hiddenForOpponent) {
       next.hidden = true
     }
 
@@ -1586,31 +1612,50 @@ function drawPlayerPanel(pid, label, x, y, w, h, isOpponent) {
   })
 
   const total = calcCardsKcal(player.cards)
-  const visibleTotal = hiddenForOpponent ? getVisibleKcal(displayCards) : total
+  const visibleTotal = hiddenForOpponent ? 0 : total
 
   const bg = isOpponent ? '#EFE9DF' : '#FFFFFF'
-  const status = player.busted
-    ? '爆牌'
-    : player.stood
+
+  let status = '观察中'
+
+  if (hiddenForOpponent) {
+    // 不显示对方是否爆牌。
+    status = player.stood
       ? '已收手'
       : game.phase === 'meal_playing' && game.turn === pid
         ? '点餐中'
         : game.phase === 'opening'
           ? '起手中'
           : '观察中'
+  } else {
+    status = player.busted || isBusted(game, pid)
+      ? '爆牌'
+      : player.stood
+        ? '已收手'
+        : game.phase === 'meal_playing' && game.turn === pid
+          ? '点餐中'
+          : game.phase === 'opening'
+            ? '起手中'
+            : '观察中'
+  }
 
   drawRoundRect(x, y, w, h, 22, bg, '#111', 3)
 
   drawText(label, x + 16, y + 12, 24, '#111', 'left', 'bold')
-  drawText(status, x + 76, y + 18, 14, player.busted ? '#E94335' : '#111', 'left', 'bold')
+  drawText(status, x + 76, y + 18, 14, status === '爆牌' ? '#E94335' : '#111', 'left', 'bold')
 
   const kcalText = hiddenForOpponent
-    ? `明牌 ${visibleTotal} kcal`
+    ? `热量未知`
     : `${total}/${meal.threshold} kcal`
 
-  drawText(kcalText, x + w - 16, y + 15, 16, total > meal.threshold ? '#E94335' : '#111', 'right', 'bold')
+  drawText(kcalText, x + w - 16, y + 15, 16, status === '爆牌' ? '#E94335' : '#111', 'right', 'bold')
   drawText(`外卖 ${game.records[pid].dayOrdersUsed}/${TOTAL_ORDERS_PER_DAY}`, x + 16, y + 44, 13, '#666', 'left', 'bold')
-  drawText(`全日总热量 ${getDayTotalKcal(game, pid) + (game.phase === 'meal_result' || game.phase === 'day_result' ? 0 : total)}`, x + 118, y + 44, 13, '#111', 'left', 'bold')
+
+  const dayText = hiddenForOpponent
+    ? `已结算热量 ${getDayTotalKcal(game, pid)}`
+    : `全日总热量 ${getDayTotalKcal(game, pid) + (inResultPhase ? 0 : total)}`
+
+  drawText(dayText, x + 118, y + 44, 13, '#111', 'left', 'bold')
 
   let cardsToDraw = displayCards
 
@@ -1642,6 +1687,7 @@ function drawCenterPanel(x, y, w, h) {
   wrapText(hint, x + 16, y + 42, w - 32, 18, 13, '#333', 'bold', 2)
 }
 
+
 function drawActionButtons() {
   const y = H - SAFE_BOTTOM - 86
   const gap = 10
@@ -1653,6 +1699,7 @@ function drawActionButtons() {
   const smallH = (72 - smallGap) / 2
 
   const selfId = getSelfId()
+  const oppId = otherPlayer(selfId)
 
   if (appMode === 'online' && (!roomData || roomData.status === 'lobby' || game.phase === 'lobby')) {
     addButton('noop', '荤', leftX, y, smallW, smallH, '#ddd', '#555', 18)
@@ -1669,6 +1716,15 @@ function drawActionButtons() {
   const disabledFill = '#ddd'
   const disabledColor = '#666'
 
+  if (game.phase === 'meal_playing' && game.turn === oppId && !game.players[selfId].stood) {
+    drawText('对方点餐回合，请等待对方操作', W / 2, y - 24, 13, '#E94335', 'center', 'bold')
+  } else if (game.phase === 'meal_playing' && game.turn === selfId) {
+    const tip = (game.players[selfId].busted || isBusted(game, selfId))
+      ? '你已爆牌：仍可继续叫外卖迷惑对方'
+      : '轮到你点外卖'
+    drawText(tip, W / 2, y - 24, 13, '#E94335', 'center', 'bold')
+  }
+
   addButton(canAct ? 'draw_meat' : 'noop', '荤', leftX, y, smallW, smallH, canAct ? TYPE_COLORS['荤'] : disabledFill, canAct ? '#111' : disabledColor, 18)
   addButton(canAct ? 'draw_veg' : 'noop', '素', leftX + smallW + smallGap, y, smallW, smallH, canAct ? TYPE_COLORS['素'] : disabledFill, canAct ? '#111' : disabledColor, 18)
   addButton(canAct ? 'draw_staple' : 'noop', '主食', leftX, y + smallH + smallGap, smallW, smallH, canAct ? TYPE_COLORS['主食'] : disabledFill, canAct ? '#111' : disabledColor, 18)
@@ -1678,15 +1734,18 @@ function drawActionButtons() {
   let standSub = ''
   if (game.phase === 'opening') {
     standText = '起手中'
-    standSub = '先抽2张'
+    standSub = '双方可同时抽'
   } else if (game.phase === 'night_picking') {
     standText = '夜宵'
     standSub = '选完自动揭晓'
-  } else if (game.players[selfId].busted) {
-    standText = '等待结算'
-    standSub = '已爆牌'
   } else if (game.phase === 'meal_playing') {
-    standSub = game.turn === selfId ? '确认热量' : '等待对方'
+    if (game.turn === selfId) {
+      standText = '收手'
+      standSub = (game.players[selfId].busted || isBusted(game, selfId)) ? '结束并摊牌' : '确认热量'
+    } else {
+      standText = '等待对方'
+      standSub = '对方点餐回合'
+    }
   }
 
   addButton(game.phase === 'meal_playing' && game.turn === selfId ? 'stand' : 'noop', standText, leftX + leftW + gap, y, rightW, 72, '#FFE169', '#111', 24)
