@@ -1,12 +1,3 @@
-
-// Firebase 普通 script 版会把联机函数挂到 window 上。
-// 这样即使 Firebase CDN 加载失败，单机首页也不会白屏。
-const createRoom = window.createRoom
-const joinRoom = window.joinRoom
-const listenRoom = window.listenRoom
-const updateRoom = window.updateRoom
-const deleteRoom = window.deleteRoom
-
 // game.js
 // 卡路里牌 Demo：对战布局版
 // 上半区对手，下半区自己
@@ -2141,18 +2132,56 @@ if (id === 'start') {
 }
 
 // ==========================================================
-// Online Room Add-on v0.2
-// - 保留原有单机规则、卡牌、图片、UI绘制。
-// - 首页新增：单机游戏 / 开房间 / 加入房间。
-// - 联机版使用 Firebase Realtime Database 同步整局 game state。
+// Online Room Add-on v0.4 非阻塞版
+// 核心修复：Firebase 不在首页预加载，避免网络/CDN阻塞导致白屏。
+// 首页先正常显示；只有点击“开房间 / 加入房间”时才加载 online.js + Firebase。
 // ==========================================================
 
-let playMode = 'home'
+let playMode = 'home' // home / single / online
 let onlineRoomId = ''
-let onlinePlayerId = ''
+let onlinePlayerId = '' // p1 / p2
 let onlineUnsubscribe = null
 let onlineRoomData = null
 let onlineBusy = false
+let onlineLayerPromise = null
+
+function loadPlainScript(src) {
+  return new Promise((resolve, reject) => {
+    const existed = Array.prototype.find.call(document.scripts, s => s.src && s.src.indexOf(src) >= 0)
+    if (existed) {
+      resolve()
+      return
+    }
+
+    const script = document.createElement('script')
+    script.src = src
+    script.async = true
+    script.onload = () => resolve()
+    script.onerror = () => reject(new Error(`脚本加载失败：${src}`))
+    document.head.appendChild(script)
+  })
+}
+
+async function ensureOnlineLayer() {
+  if (!IS_WEB) {
+    throw new Error('当前版本的开房间测试只支持网页/GitHub Pages')
+  }
+
+  if (window.createRoom && window.joinRoom && window.listenRoom && window.updateRoom) {
+    return true
+  }
+
+  if (!onlineLayerPromise) {
+    onlineLayerPromise = loadPlainScript('./online.js').then(() => {
+      if (!window.createRoom || !window.joinRoom || !window.listenRoom || !window.updateRoom) {
+        throw new Error('online.js 已加载，但联机函数没有准备好')
+      }
+      return true
+    })
+  }
+
+  return onlineLayerPromise
+}
 
 function deepClone(obj) {
   return JSON.parse(JSON.stringify(obj))
@@ -2179,8 +2208,7 @@ function isOnlineMyTurn() {
 }
 
 function createOnlineSideState(playerId) {
-  const side = createSideState(getOnlinePlayerName(playerId))
-  return side
+  return createSideState(getOnlinePlayerName(playerId))
 }
 
 function createInitialOnlineGame() {
@@ -2260,20 +2288,16 @@ function buildOnlineGameFromLocal(nextTurn) {
 
 async function saveOnlineGame(nextTurn, statusOverride) {
   if (!onlineRoomId || !onlinePlayerId) return
+  await ensureOnlineLayer()
 
   const nextGame = buildOnlineGameFromLocal(nextTurn)
-
   const patch = { game: nextGame }
 
-  if (statusOverride) {
-    patch.status = statusOverride
-  } else if (nextGame.gameEnded) {
-    patch.status = 'finished'
-  } else if (onlineRoomData && onlineRoomData.status) {
-    patch.status = onlineRoomData.status
-  }
+  if (statusOverride) patch.status = statusOverride
+  else if (nextGame.gameEnded) patch.status = 'finished'
+  else if (onlineRoomData && onlineRoomData.status) patch.status = onlineRoomData.status
 
-  await updateRoom(onlineRoomId, patch)
+  await window.updateRoom(onlineRoomId, patch)
 }
 
 function onlineSetLocalMessage(text) {
@@ -2294,10 +2318,15 @@ async function createOnlineRoomFromHome() {
 
   if (onlineBusy) return
   onlineBusy = true
-  onlineSetLocalMessage('正在创建房间...')
+  message = '正在加载联机模块...'
+  render()
 
   try {
-    const result = await createRoom(createInitialOnlineGame())
+    await ensureOnlineLayer()
+    message = '正在创建房间...'
+    render()
+
+    const result = await window.createRoom(createInitialOnlineGame())
 
     playMode = 'online'
     gameStarted = true
@@ -2306,17 +2335,14 @@ async function createOnlineRoomFromHome() {
 
     if (onlineUnsubscribe) onlineUnsubscribe()
 
-    onlineUnsubscribe = listenRoom(onlineRoomId, data => {
+    onlineUnsubscribe = window.listenRoom(onlineRoomId, data => {
       onlineRoomData = data
-
       if (data && data.game) {
         applyOnlineGameToLocal(data.game)
-
         if (data.status === 'waiting') {
           message = `房间码 ${onlineRoomId}：等待玩家2加入`
         }
       }
-
       render()
     })
   } catch (err) {
@@ -2346,10 +2372,15 @@ async function joinOnlineRoomFromHome() {
 
   if (onlineBusy) return
   onlineBusy = true
-  onlineSetLocalMessage('正在加入房间...')
+  message = '正在加载联机模块...'
+  render()
 
   try {
-    const result = await joinRoom(roomCode)
+    await ensureOnlineLayer()
+    message = '正在加入房间...'
+    render()
+
+    const result = await window.joinRoom(roomCode)
 
     playMode = 'online'
     gameStarted = true
@@ -2358,7 +2389,7 @@ async function joinOnlineRoomFromHome() {
 
     if (onlineUnsubscribe) onlineUnsubscribe()
 
-    onlineUnsubscribe = listenRoom(onlineRoomId, data => {
+    onlineUnsubscribe = window.listenRoom(onlineRoomId, data => {
       onlineRoomData = data
       if (data && data.game) applyOnlineGameToLocal(data.game)
       render()
@@ -2400,15 +2431,8 @@ function onlineSideDone(side) {
 
 function chooseNextTurnAfterActiveAction(activePlayerId) {
   const otherPlayerId = getOnlineOtherPlayer(activePlayerId)
-
-  if (onlineSideDone(sides.self) && onlineSideDone(sides.opponent)) {
-    return activePlayerId
-  }
-
-  if (onlineSideDone(sides.opponent)) {
-    return activePlayerId
-  }
-
+  if (onlineSideDone(sides.self) && onlineSideDone(sides.opponent)) return activePlayerId
+  if (onlineSideDone(sides.opponent)) return activePlayerId
   return otherPlayerId
 }
 
@@ -2450,7 +2474,6 @@ async function playerDrawOnline(type) {
 
   const self = sides.self
   const otherPlayerId = getOnlineOtherPlayer(onlinePlayerId)
-
   if (self.stood || self.busted) return
 
   if (isNightMeal()) {
@@ -2492,7 +2515,6 @@ async function playerDrawOnline(type) {
   }
 
   const card = drawFromDeckByType(type)
-
   if (!card) {
     message = `${type}牌暂时抽不到`
     await saveOnlineGame(onlinePlayerId)
@@ -2537,7 +2559,6 @@ async function playerDrawOnline(type) {
 
   card.privateCard = false
   self.cards.push(card)
-
   self.ordersUsed += 1
   records.self.dayOrdersUsed += 1
 
@@ -2576,7 +2597,6 @@ async function playerStandOnline() {
 
   if (isNightMeal()) {
     const remaining = getOnlineRemainingOrdersForSelf()
-
     if (remaining > 0) {
       message = `请先选完夜宵搭配，还剩 ${remaining} 次`
       await saveOnlineGame(onlinePlayerId)
@@ -2610,7 +2630,6 @@ async function playerStandOnline() {
   }
 
   message = `${getOnlinePlayerName(onlinePlayerId)}选择收手，等待对手`
-
   const nextTurn = onlineSideDone(sides.opponent) ? onlinePlayerId : otherPlayerId
   await saveOnlineGame(nextTurn)
 }
@@ -2642,11 +2661,9 @@ async function goNextMealOnline() {
     opponent: createOnlineSideState('p2')
   }
 
-  if (isNightMeal()) {
-    message = `夜宵开始：双方按剩余外卖次数选择搭配`
-  } else {
-    message = `${meals[nextIndex].name}开始：玩家1先抽起手牌`
-  }
+  message = isNightMeal()
+    ? '夜宵开始：双方按剩余外卖次数选择搭配'
+    : `${meals[nextIndex].name}开始：玩家1先抽起手牌`
 
   await saveOnlineGame('p1', 'playing')
 }
@@ -2682,11 +2699,9 @@ function drawOnlineRoomBadge() {
 function drawBattleScreen() {
   const actionH = 92
   const actionY = H - SAFE_BOTTOM - actionH
-
   const topY = SAFE_TOP + (isOnlineMode() ? 26 : 0)
   const centerH = 68
   const gap = 8
-
   const availableH = actionY - topY - 10
 
   let zoneH = Math.floor((availableH - centerH - gap * 2) / 2)
@@ -2701,7 +2716,6 @@ function drawBattleScreen() {
   drawBattleZone('opponent', 16, opponentY, W - 32, zoneH)
   drawCenterPanel(16, centerY, W - 32, centerH)
   drawBattleZone('self', 16, selfY, W - 32, zoneH)
-
   drawGameButtons()
 }
 
@@ -2749,15 +2763,7 @@ function drawGameButtons() {
       standSubText = '热量爆表'
     }
 
-    drawCleanStandButton(
-      'stand',
-      standText,
-      16 + leftW + gap,
-      y,
-      standW,
-      buttonH,
-      standSubText
-    )
+    drawCleanStandButton('stand', standText, 16 + leftW + gap, y, standW, buttonH, standSubText)
   } else {
     if (currentMealIndex >= meals.length - 1) {
       drawCleanStandButton('next', '今日结算', 16, y, W - 32, buttonH, '查看最终订单')
@@ -2769,13 +2775,11 @@ function drawGameButtons() {
 
 function drawStartScreen() {
   buttons = []
-
   preloadGameImages()
   const preloadProgress = getImagePreloadProgress()
   const preloadDone = preloadProgress.done
 
   ctx.clearRect(0, 0, W, H)
-
   ctx.fillStyle = '#F7F1E8'
   ctx.fillRect(0, 0, W, H)
 
@@ -2808,7 +2812,6 @@ function drawStartScreen() {
 
     drawText('游戏规则', textX, textY, 20, '#111', 'left', 'bold')
     textY += 26
-
     textY = wrapText('1. 四餐：早餐400，午餐800，晚餐600，夜宵800。', textX, textY, textW, lh, fs, '#333', 'bold', 2)
     textY += 2
     textY = wrapText('2. 每餐先抽2张：第1张底牌，第2张明牌；不消耗外卖。', textX, textY, textW, lh, fs, '#333', 'bold', 2)
@@ -2820,21 +2823,9 @@ function drawStartScreen() {
     wrapText('5. 组合奖励与夜宵规则保留；最终分=四餐胜局+全日热量分。', textX, textY, textW, lh, fs, '#333', 'bold', 3)
   }
 
-  addButton(
-    'rules_toggle',
-    rulesExpanded ? '收起规则' : '游戏规则',
-    32,
-    H - SAFE_BOTTOM - 282,
-    W - 64,
-    40,
-    '#FFFFFF',
-    '#111',
-    16
-  )
+  addButton('rules_toggle', rulesExpanded ? '收起规则' : '游戏规则', 32, H - SAFE_BOTTOM - 282, W - 64, 40, '#FFFFFF', '#111', 16)
 
-  const imageText = preloadDone
-    ? ''
-    : `图片加载中 ${preloadProgress.loaded + preloadProgress.failed}/${preloadProgress.total}`
+  const imageText = preloadDone ? '' : `图片加载中 ${preloadProgress.loaded + preloadProgress.failed}/${preloadProgress.total}`
 
   if (!preloadDone) {
     addButton('loading', imageText, 32, H - SAFE_BOTTOM - 230, W - 64, 52, '#777', '#fff', 17)
@@ -2842,42 +2833,13 @@ function drawStartScreen() {
     addButton('single_start', '单机游戏', 32, H - SAFE_BOTTOM - 230, W - 64, 52, '#111', '#fff', 22)
   }
 
-  addButton(
-    preloadDone ? 'online_create' : 'loading',
-    '开房间',
-    32,
-    H - SAFE_BOTTOM - 170,
-    W - 64,
-    52,
-    preloadDone ? '#FFE169' : '#777',
-    preloadDone ? '#111' : '#fff',
-    22
-  )
-
-  addButton(
-    preloadDone ? 'online_join' : 'loading',
-    '加入房间',
-    32,
-    H - SAFE_BOTTOM - 110,
-    W - 64,
-    52,
-    preloadDone ? '#9EDBFF' : '#777',
-    preloadDone ? '#111' : '#fff',
-    22
-  )
+  addButton(preloadDone ? 'online_create' : 'loading', '开房间', 32, H - SAFE_BOTTOM - 170, W - 64, 52, preloadDone ? '#FFE169' : '#777', preloadDone ? '#111' : '#fff', 22)
+  addButton(preloadDone ? 'online_join' : 'loading', '加入房间', 32, H - SAFE_BOTTOM - 110, W - 64, 52, preloadDone ? '#9EDBFF' : '#777', preloadDone ? '#111' : '#fff', 22)
 
   if (message) {
     wrapText(message, 32, H - SAFE_BOTTOM - 50, W - 64, 16, 12, '#E94335', 'bold', 2)
   } else if (preloadDone && preloadProgress.failed > 0) {
-    drawText(
-      `有 ${preloadProgress.failed} 张图片未加载，将显示占位卡`,
-      W / 2,
-      H - SAFE_BOTTOM - 42,
-      11,
-      '#E94335',
-      'center',
-      'bold'
-    )
+    drawText(`有 ${preloadProgress.failed} 张图片未加载，将显示占位卡`, W / 2, H - SAFE_BOTTOM - 42, 11, '#E94335', 'center', 'bold')
   }
 }
 
@@ -2887,7 +2849,6 @@ function handleTouch(e) {
 
   const x = touch.clientX
   const y = touch.clientY
-
   const id = hitButton(x, y)
   if (!id) return
 
@@ -2907,7 +2868,6 @@ function handleTouch(e) {
       render()
       return
     }
-
     startSingleGameFromHome()
     return
   }
@@ -2958,15 +2918,11 @@ function handleTouch(e) {
   }
 
   if (id === 'restart') {
-    if (isOnlineMode()) {
-      leaveOnlineRoomToHome()
-    } else {
-      startGame()
-    }
+    if (isOnlineMode()) leaveOnlineRoomToHome()
+    else startGame()
     return
   }
 }
 
 GAME_API.onTouchStart(handleTouch)
-
 render()

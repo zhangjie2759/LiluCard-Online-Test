@@ -1,15 +1,21 @@
-利禄卡 Online v0.3 上传说明
+利禄卡 Online v0.4 非阻塞白屏修复版
 
-这版修复了 v0.2 可能出现的白屏问题：
-- 不再使用 type="module" 和 Firebase ESM import
-- 改为普通 script 加载，单机首页不会因为 Firebase 模块失败而白屏
+这版专门修复：Firebase 脚本在首页阻塞加载导致整页白屏。
 
-上传到 GitHub 仓库根目录：
-1. index.html
-2. game.js
-3. online.js
+改动：
+1. index.html 只加载 game.js，不再提前加载 Firebase。
+2. 首页会先正常显示。
+3. 只有点击“开房间 / 加入房间”时，才动态加载 online.js 和 Firebase。
+4. 保留你原本的 images/cards 路径和单机内容。
 
-注意：
-- 原来的 images/cards 文件夹必须保留。
-- 如果 GitHub Pages 有缓存，上传后等 1-3 分钟再刷新。
-- 手机上请强制刷新或重新打开链接。
+上传到 GitHub 根目录：
+- index.html
+- game.js
+- online.js
+
+同时保留原 images/cards 文件夹。
+
+上传后建议：
+1. 等 1-3 分钟。
+2. 浏览器强制刷新。
+3. 手机重新打开链接，不要用旧缓存页面。
