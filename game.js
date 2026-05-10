@@ -1,5 +1,5 @@
 // game.js
-// 利禄卡 Online v2.9 结算卡牌盘点与节奏优化版
+// 利禄卡 Online v2.9 BGM 版：加入循环背景音乐
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -115,6 +115,19 @@ let unsubscribeRoom = null
 let buttons = []
 let message = ''
 let rulesExpanded = false
+
+// =========================
+// 背景音乐 BGM
+// =========================
+// 请在 GitHub 根目录上传：audio/bgm.mp3
+// 手机浏览器必须在玩家第一次点击后才能播放音乐。
+const BGM_SRC = './audio/bgm.mp3'
+
+let bgm = null
+let bgmEnabled = true
+let bgmStarted = false
+let bgmLoadFailed = false
+let bgmStatusText = ''
 let localReadyLocked = false
 let startRequested = false
 let startOverlayText = ''
@@ -132,6 +145,104 @@ let onlineActionLocked = false
 let onlineActionLockUntil = 0
 
 let game = createGame('single')
+
+function initBgm() {
+  if (bgm) return
+
+  try {
+    bgm = new Audio(BGM_SRC)
+    bgm.loop = true
+    bgm.volume = 0.32
+    bgm.preload = 'auto'
+    bgm.setAttribute('playsinline', 'true')
+    bgm.setAttribute('webkit-playsinline', 'true')
+
+    bgm.addEventListener('canplaythrough', () => {
+      bgmLoadFailed = false
+      if (!bgmStatusText) bgmStatusText = '音乐已加载'
+      requestRender()
+    })
+
+    bgm.addEventListener('error', () => {
+      bgmLoadFailed = true
+      bgmStatusText = '音乐文件未找到：请检查 audio/bgm.mp3'
+      requestRender()
+    })
+  } catch (err) {
+    bgmLoadFailed = true
+    bgmStatusText = '音乐初始化失败'
+  }
+}
+
+function startBgm() {
+  if (!bgmEnabled) return
+
+  initBgm()
+
+  if (!bgm || bgmLoadFailed) return
+
+  // 每次用户点击后都尝试播放一次，解决手机浏览器必须用户手势触发的问题。
+  bgm.play()
+    .then(() => {
+      bgmStarted = true
+      bgmStatusText = '音乐播放中'
+      requestRender()
+    })
+    .catch((err) => {
+      bgmStarted = false
+      bgmStatusText = '点击任意按钮启动音乐'
+      requestRender()
+    })
+}
+
+function toggleBgm() {
+  initBgm()
+
+  if (bgmLoadFailed) {
+    bgmStatusText = '音乐文件未找到：audio/bgm.mp3'
+    requestRender()
+    return
+  }
+
+  // 修复：如果音乐还没真正播放，点击“音乐”按钮应该尝试播放，而不是直接关掉。
+  if (!bgmEnabled) {
+    bgmEnabled = true
+    startBgm()
+    return
+  }
+
+  if (!bgmStarted || (bgm && bgm.paused)) {
+    bgmEnabled = true
+    startBgm()
+    return
+  }
+
+  bgmEnabled = false
+  if (bgm) bgm.pause()
+  bgmStatusText = '音乐已关闭'
+  requestRender()
+}
+
+function drawMusicButton() {
+  let label = '音乐'
+
+  if (bgmLoadFailed) {
+    label = '音乐失败'
+  } else if (!bgmEnabled) {
+    label = '音乐 关'
+  } else if (bgmStarted && bgm && !bgm.paused) {
+    label = '音乐 开'
+  } else {
+    label = '播放音乐'
+  }
+
+  addButton('music_toggle', label, 16, SAFE_TOP + 2, 92, 30, '#FFFFFF', '#111', 12)
+
+  // 只在异常或未启动时显示小提示，避免正常游戏时占屏幕。
+  if (bgmStatusText && (!bgmStarted || bgmLoadFailed)) {
+    drawText(bgmStatusText, 112, SAFE_TOP + 9, 10, bgmLoadFailed ? '#E94335' : '#777', 'left', 'bold')
+  }
+}
 
 // =========================
 // 基础工具
@@ -1912,6 +2023,8 @@ function drawHome() {
   addButton('online_join', '加入房间', 32 + halfW + gap, bottomY + 68, halfW, 54, '#9EDBFF', '#111', 20)
 
   if (message) wrapText(message, 32, H - SAFE_BOTTOM - 24, W - 64, 14, 11, '#E94335', 'bold', 1)
+
+  drawMusicButton()
 }
 
 
@@ -2145,6 +2258,7 @@ function drawActionButtons() {
 function drawGameScreen() {
   drawTopBadge()
   drawHomeMiniButton()
+  drawMusicButton()
 
   const topY = SAFE_TOP + (appMode === 'online' ? 32 : 0)
   const actionY = H - SAFE_BOTTOM - 94
@@ -2210,6 +2324,7 @@ function drawMealResult() {
   if (!result) {
     drawText('本餐结算', 24, SAFE_TOP + 10, 28, '#111', 'left', 'bold')
     drawHomeMiniButton()
+    drawMusicButton()
     addButton('next', '继续', 24, H - SAFE_BOTTOM - 72, W - 48, 58, '#111', '#fff', 22)
     return
   }
@@ -2239,6 +2354,7 @@ function drawMealResult() {
   const oppBusted = oppId === 'p1' ? result.p1Busted : result.p2Busted
 
   drawHomeMiniButton()
+  drawMusicButton()
 
   const panelW = W - 48
   const panelH = Math.min(520, H - SAFE_TOP - SAFE_BOTTOM - 112)
@@ -2300,6 +2416,7 @@ function drawResultPlayer(title, pid, y, h) {
 
 function drawDayResult() {
   drawHomeMiniButton()
+  drawMusicButton()
 
   const selfId = getSelfId()
   const oppId = otherPlayer(selfId)
@@ -2461,6 +2578,11 @@ async function handleAction(id) {
       return
     }
 
+    if (id === 'music_toggle') {
+      toggleBgm()
+      return
+    }
+
     if (id === 'home') {
       leaveToHome()
       return
@@ -2544,6 +2666,10 @@ async function handleAction(id) {
 function onPointer(clientX, clientY) {
   const id = hitButton(clientX, clientY)
   if (!id || id === 'noop') return
+
+  if (id !== 'music_toggle') {
+    startBgm()
+  }
 
   buttonPulse[id] = Date.now()
   requestRender()
