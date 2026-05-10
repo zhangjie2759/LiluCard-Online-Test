@@ -2200,7 +2200,9 @@ function isOnlineMode() {
 }
 
 function isOnlineRoomReady() {
-  return isOnlineMode() && onlineRoomData && onlineRoomData.status === 'playing'
+  if (!isOnlineMode() || !onlineRoomData) return false
+  const players = onlineRoomData.players || {}
+  return onlineRoomData.status === 'playing' || Boolean(players.p1 && players.p2)
 }
 
 function isOnlineMyTurn() {
@@ -2219,7 +2221,9 @@ function createInitialOnlineGame() {
     mealEnded: false,
     message: '等待玩家2加入房间',
     comboMessage: '',
-    turn: 'p1',
+    turn: 'opening',
+    // 早餐随机一次先手；午餐自动换边，晚餐再换回来；夜宵不分先后。
+    breakfastFirstTurn: null,
     actionSeq: 0,
     sidesByPlayer: {
       p1: createOnlineSideState('p1'),
@@ -2425,6 +2429,65 @@ function isOnlineOpeningPhaseForSelf() {
   return sides.self && sides.self.cards && sides.self.cards.length < 2 && !mealEnded && !gameEnded
 }
 
+
+function isOnlineOpeningStage() {
+  if (!isOnlineMode() || !isOnlineRoomReady()) return false
+  if (isNightMeal() || mealEnded || gameEnded) return false
+
+  const selfCount = sides.self && sides.self.cards ? sides.self.cards.length : 0
+  const opponentCount = sides.opponent && sides.opponent.cards ? sides.opponent.cards.length : 0
+
+  return selfCount < 2 || opponentCount < 2
+}
+
+function canOnlineSelfActNow() {
+  if (!isOnlineRoomReady()) return false
+  if (!sides.self || sides.self.stood || sides.self.busted) return false
+
+  // 起手阶段不分先后：双方都可以各自先抽满 2 张。
+  if (isOnlineOpeningStage()) {
+    return sides.self.cards.length < 2
+  }
+
+  // 夜宵也不分先后：双方按自己的剩余次数自由选择，谁先点都可以。
+  if (isNightMeal() && !mealEnded && !gameEnded) {
+    return true
+  }
+
+  return isOnlineMyTurn()
+}
+
+function getRandomOnlineFirstTurn() {
+  return Math.random() < 0.5 ? 'p1' : 'p2'
+}
+
+function getOnlineFirstTurnByMealIndex(mealIndex, breakfastFirstTurn) {
+  if (mealIndex >= meals.length - 1) return 'night'
+
+  const first = breakfastFirstTurn || getRandomOnlineFirstTurn()
+
+  // 早餐、晚餐同一方先手；午餐自动换成另一方先手。
+  if (mealIndex % 2 === 0) return first
+  return getOnlineOtherPlayer(first)
+}
+
+function ensureOnlineBreakfastFirstTurn() {
+  if (!onlineRoomData) onlineRoomData = {}
+  if (!onlineRoomData.game) onlineRoomData.game = {}
+
+  if (!onlineRoomData.game.breakfastFirstTurn) {
+    onlineRoomData.game.breakfastFirstTurn = getRandomOnlineFirstTurn()
+  }
+
+  return onlineRoomData.game.breakfastFirstTurn
+}
+
+function getOnlineTurnName(turn) {
+  if (turn === 'opening') return '起手'
+  if (turn === 'night') return '夜宵'
+  return getOnlinePlayerName(turn)
+}
+
 function onlineSideDone(side) {
   return Boolean(side.stood || side.busted)
 }
@@ -2464,22 +2527,29 @@ async function playerDrawOnline(type) {
     return
   }
 
-  if (!isOnlineMyTurn()) {
+  if (gameEnded || mealEnded) return
+
+  const self = sides.self
+  const otherPlayerId = getOnlineOtherPlayer(onlinePlayerId)
+
+  if (isOnlineOpeningStage() && self.cards.length >= 2) {
+    message = '你的起手牌已抽满，等待对手抽满起手牌'
+    render()
+    return
+  }
+
+  if (!isOnlineOpeningStage() && !isNightMeal() && !isOnlineMyTurn()) {
     message = '等待对手操作'
     render()
     return
   }
 
-  if (gameEnded || mealEnded) return
-
-  const self = sides.self
-  const otherPlayerId = getOnlineOtherPlayer(onlinePlayerId)
   if (self.stood || self.busted) return
 
   if (isNightMeal()) {
     if (records.self.dayOrdersUsed >= TOTAL_ORDERS_PER_DAY) {
       message = '你的夜宵搭配已经选完'
-      await saveOnlineGame(otherPlayerId)
+      await saveOnlineGame('night')
       return
     }
 
@@ -2491,18 +2561,18 @@ async function playerDrawOnline(type) {
 
     if (remaining > 0) {
       message = `${getOnlinePlayerName(onlinePlayerId)}夜宵搭配：${choiceText}；还剩 ${remaining} 次`
-      await saveOnlineGame(onlinePlayerId)
+      await saveOnlineGame('night')
       return
     }
 
     if (getOnlineRemainingOrdersForOpponent() > 0) {
       message = `${getOnlinePlayerName(onlinePlayerId)}夜宵已选完，等待${getOnlinePlayerName(otherPlayerId)}`
-      await saveOnlineGame(otherPlayerId)
+      await saveOnlineGame('night')
       return
     }
 
     finishNightMealOnlineAndSave()
-    await saveOnlineGame(onlinePlayerId, 'playing')
+    await saveOnlineGame('night', 'playing')
     return
   }
 
@@ -2552,8 +2622,17 @@ async function playerDrawOnline(type) {
       return
     }
 
-    message = '双方起手完成，玩家1先行动'
-    await saveOnlineGame('p1')
+    const breakfastFirstTurn = ensureOnlineBreakfastFirstTurn()
+    const firstTurn = getOnlineFirstTurnByMealIndex(currentMealIndex, breakfastFirstTurn)
+    const mealName = meals[currentMealIndex] ? meals[currentMealIndex].name : '本餐'
+
+    if (currentMealIndex === 0) {
+      message = `双方起手完成，早餐随机由${getOnlinePlayerName(firstTurn)}先手`
+    } else {
+      message = `双方起手完成，${mealName}自动由${getOnlinePlayerName(firstTurn)}先手`
+    }
+
+    await saveOnlineGame(firstTurn)
     return
   }
 
@@ -2584,33 +2663,43 @@ async function playerStandOnline() {
     return
   }
 
-  if (!isOnlineMyTurn()) {
-    message = '等待对手操作'
-    render()
-    return
-  }
-
   if (gameEnded || mealEnded) return
 
   const self = sides.self
   const otherPlayerId = getOnlineOtherPlayer(onlinePlayerId)
 
+  if (isOnlineOpeningStage()) {
+    if (self.cards.length < 2) {
+      message = `起手阶段请先抽满2张，目前 ${self.cards.length}/2`
+    } else {
+      message = '你的起手牌已抽满，等待对手抽满起手牌'
+    }
+    render()
+    return
+  }
+
+  if (!isNightMeal() && !isOnlineMyTurn()) {
+    message = '等待对手操作'
+    render()
+    return
+  }
+
   if (isNightMeal()) {
     const remaining = getOnlineRemainingOrdersForSelf()
     if (remaining > 0) {
       message = `请先选完夜宵搭配，还剩 ${remaining} 次`
-      await saveOnlineGame(onlinePlayerId)
+      await saveOnlineGame('night')
       return
     }
 
     if (getOnlineRemainingOrdersForOpponent() > 0) {
       message = `你的夜宵已选完，等待${getOnlinePlayerName(otherPlayerId)}`
-      await saveOnlineGame(otherPlayerId)
+      await saveOnlineGame('night')
       return
     }
 
     finishNightMealOnlineAndSave()
-    await saveOnlineGame(onlinePlayerId, 'playing')
+    await saveOnlineGame('night', 'playing')
     return
   }
 
@@ -2661,11 +2750,19 @@ async function goNextMealOnline() {
     opponent: createOnlineSideState('p2')
   }
 
-  message = isNightMeal()
-    ? '夜宵开始：双方按剩余外卖次数选择搭配'
-    : `${meals[nextIndex].name}开始：玩家1先抽起手牌`
+  if (isNightMeal()) {
+    message = '夜宵开始：不分先后，双方按剩余外卖次数选择搭配'
+    await saveOnlineGame('night', 'playing')
+    return
+  }
 
-  await saveOnlineGame('p1', 'playing')
+  const breakfastFirstTurn = ensureOnlineBreakfastFirstTurn()
+  const mealFirstTurn = getOnlineFirstTurnByMealIndex(nextIndex, breakfastFirstTurn)
+
+  message = `${meals[nextIndex].name}开始：起手阶段不分先后；正式行动由${getOnlinePlayerName(mealFirstTurn)}先手`
+
+  // 起手阶段仍然不分先后，所以先保存 opening；双方起手抽满后再自动切到 mealFirstTurn。
+  await saveOnlineGame('opening', 'playing')
 }
 
 function drawOnlineRoomBadge() {
@@ -2688,9 +2785,16 @@ function drawOnlineRoomBadge() {
   drawText(badgeText, W / 2, y + 6, 11, '#fff', 'center', 'bold')
 
   if (isOnlineRoomReady() && !gameEnded && !mealEnded) {
-    const turnText = onlineRoomData.game && onlineRoomData.game.turn === onlinePlayerId
-      ? '轮到你'
-      : `等待${getOnlinePlayerName(onlineRoomData.game ? onlineRoomData.game.turn : '')}`
+    let turnText = ''
+
+    if (isOnlineOpeningStage()) {
+      turnText = sides.self.cards.length < 2 ? '起手：你可抽牌' : '等待对手起手'
+    } else if (isNightMeal()) {
+      turnText = getOnlineRemainingOrdersForSelf() > 0 ? '夜宵：不分先后' : '等待对手夜宵'
+    } else {
+      const turn = onlineRoomData.game ? onlineRoomData.game.turn : ''
+      turnText = turn === onlinePlayerId ? '轮到你' : `等待${getOnlineTurnName(turn)}`
+    }
 
     drawText(turnText, W - 22, y + 32, 12, '#111', 'right', 'bold')
   }
@@ -2730,7 +2834,7 @@ function drawGameButtons() {
   if (!mealEnded) {
     const self = sides.self
     const isNight = isNightMeal()
-    const onlineLocked = isOnlineMode() && (!isOnlineRoomReady() || !isOnlineMyTurn())
+    const onlineLocked = isOnlineMode() && !canOnlineSelfActNow()
 
     const drawDisabled = onlineLocked || (
       isNight
@@ -2744,7 +2848,13 @@ function drawGameButtons() {
     const smallW = (leftW - innerGap) / 2
     const smallH = (buttonH - innerGap) / 2
 
-    drawText(isOnlineMode() && onlineLocked ? '等待对手' : '叫外卖', leftX + 2, leftY - 17, 12, '#111', 'left', 'bold')
+    let actionTitle = '叫外卖'
+    if (isOnlineMode() && isOnlineOpeningStage()) {
+      actionTitle = sides.self.cards.length < 2 ? '起手抽牌' : '等待起手'
+    } else if (isOnlineMode() && onlineLocked) {
+      actionTitle = '等待对手'
+    }
+    drawText(actionTitle, leftX + 2, leftY - 17, 12, '#111', 'left', 'bold')
     drawText(`${records.self.dayOrdersUsed}/${TOTAL_ORDERS_PER_DAY}`, leftX + leftW - 2, leftY - 17, 12, '#777', 'right', 'bold')
 
     drawStickerButton('draw_meat', '荤', leftX, leftY, smallW, smallH, drawDisabled)

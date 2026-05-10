@@ -51,35 +51,25 @@
     })
   }
 
-  function expandPatch(flatPatch) {
-    const result = {}
+  function setByPath(target, path, value) {
+    const parts = String(path).split("/").filter(Boolean)
 
-    Object.keys(flatPatch || {}).forEach(key => {
-      const value = flatPatch[key]
+    if (parts.length === 0) return
 
-      if (key.indexOf("/") < 0) {
-        result[key] = value
-        return
-      }
+    let cursor = target
 
-      const parts = key.split("/").filter(Boolean)
-      let cursor = result
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i]
 
-      for (let i = 0; i < parts.length; i++) {
-        const part = parts[i]
-
-        if (i === parts.length - 1) {
-          cursor[part] = value
-        } else {
-          if (!cursor[part] || typeof cursor[part] !== "object") {
-            cursor[part] = {}
-          }
-          cursor = cursor[part]
+      if (i === parts.length - 1) {
+        cursor[part] = value
+      } else {
+        if (!cursor[part] || typeof cursor[part] !== "object") {
+          cursor[part] = {}
         }
+        cursor = cursor[part]
       }
-    })
-
-    return result
+    }
   }
 
   async function putRoom(roomId, data) {
@@ -90,10 +80,19 @@
   }
 
   async function patchRoom(roomId, patch) {
-    return requestJSON(roomUrl(roomId), {
-      method: "PATCH",
-      body: JSON.stringify(expandPatch(patch))
+    const id = cleanRoomId(roomId)
+    const current = await getRoom(id)
+    const next = current && typeof current === "object" ? current : {}
+
+    Object.keys(patch || {}).forEach(key => {
+      if (key.indexOf("/") >= 0) {
+        setByPath(next, key, patch[key])
+      } else {
+        next[key] = patch[key]
+      }
     })
+
+    return putRoom(id, next)
   }
 
   async function createRoom(initialGame) {
@@ -150,7 +149,7 @@
           name: "玩家2",
           joinedAt: now()
         },
-        "game/message": "玩家2已加入，玩家1先抽起手牌"
+        "game/message": "玩家2已加入：起手阶段不分先后，双方各抽2张"
       })
 
       return {
