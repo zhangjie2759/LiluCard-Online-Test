@@ -1,5 +1,5 @@
 // game.js
-// 利禄卡 Online v3.2 全机型移动端适配版：视口自适应 / iPhone17 Pro防变形
+// 利禄卡 Online v3.3 白屏修复版：修复 resizeCanvas 初始化时机
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -11,6 +11,7 @@ let H = 0
 let DPR = 1
 let SAFE_TOP = 18
 let SAFE_BOTTOM = 18
+let resizeRenderReady = false
 
 function getViewportSize() {
   const vv = window.visualViewport
@@ -62,7 +63,9 @@ function resizeCanvas(force) {
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'medium'
 
-  if (typeof requestRender === 'function') requestRender()
+  if (resizeRenderReady && typeof requestRender === 'function') {
+    requestRender()
+  }
 }
 
 resizeCanvas(true)
@@ -1663,6 +1666,7 @@ function leaveToHome() {
 // =========================
 
 let renderScheduled = false
+resizeRenderReady = true
 
 function requestRender() {
   if (renderScheduled) return
