@@ -82,9 +82,13 @@
   }
 
   async function patchRoom(roomId, patch) {
+    // Firebase Realtime Database REST 的 PATCH 支持多路径 key：
+    // 例如 { "players/p1/ready": true }。
+    // 不能把它展开成 { players: { p1: { ready: true } } }，
+    // 否则会覆盖整个 players 节点，导致另一个玩家被删掉。
     return requestJSON(roomUrl(roomId), {
       method: "PATCH",
-      body: JSON.stringify(expandPatch(patch))
+      body: JSON.stringify(patch)
     })
   }
 

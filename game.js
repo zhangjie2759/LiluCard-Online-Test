@@ -1,5 +1,5 @@
 // game.js
-// 利禄卡 Online v2.0 稳定流程版
+// 利禄卡 Online v2.2 准备开局修复版
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -752,7 +752,7 @@ function getActionHint(g, selfId) {
     const p1Ready = Boolean(players.p1 && players.p1.ready)
     const p2Ready = Boolean(players.p2 && players.p2.ready)
 
-    if (!players.p2) return `房间码 ${roomId}：等待另一名玩家加入`
+    if (!players.p1 || !players.p2) return `房间码 ${roomId}：等待另一名玩家加入`
     return `准备状态：玩家1 ${p1Ready ? '已准备' : '未准备'}｜玩家2 ${p2Ready ? '已准备' : '未准备'}`
   }
 
@@ -1030,6 +1030,10 @@ async function createOnlineRoom() {
         game = normalizeGame(data.game)
       }
 
+      if (data && data.status === 'playing') {
+        startRequested = false
+      }
+
       if (data && data.players && data.players[myPlayerId] && data.players[myPlayerId].ready) {
         localReadyLocked = true
       }
@@ -1079,6 +1083,10 @@ async function joinOnlineRoom() {
         game = normalizeGame(data.game)
       }
 
+      if (data && data.status === 'playing') {
+        startRequested = false
+      }
+
       if (data && data.players && data.players[myPlayerId] && data.players[myPlayerId].ready) {
         localReadyLocked = true
       }
@@ -1126,7 +1134,14 @@ async function playerReady() {
 async function maybeStartOnlineGame() {
   if (appMode !== 'online' || !roomId || !roomData) return
   if (!areBothPlayersReady()) return
-  if (!(game.phase === 'lobby' || (roomData.status || '') === 'lobby')) return
+
+  const status = roomData.status || ''
+  const phase = game.phase || ''
+
+  // 已经开始就不重复开局
+  if (status === 'playing' || phase !== 'lobby') return
+
+  // 两边可能几乎同时检测到“双方已准备”，用本地锁避免重复点火。
   if (startRequested) return
 
   startRequested = true
@@ -1134,16 +1149,38 @@ async function maybeStartOnlineGame() {
   render()
 
   try {
-    const next = normalizeGame(roomData.game)
-    next.phase = 'opening'
-    next.message = '双方已准备：早餐起手阶段，双方各抽2张'
-    next.mealIndex = 0
-    next.turn = null
-    resetMealState(next)
+    const latest = await window.LiluOnline.getRoom(roomId)
+    if (!latest) throw new Error('房间不存在')
+
+    roomData = latest
+
+    const players = latest.players || {}
+    const bothReady = Boolean(players.p1 && players.p2 && players.p1.ready && players.p2.ready)
+
+    if (!bothReady) {
+      startRequested = false
+      render()
+      return
+    }
+
+    const latestGame = normalizeGame(latest.game)
+
+    // 如果另一边已经开局了，直接跟随，不重复覆盖
+    if (latest.status === 'playing' || latestGame.phase !== 'lobby') {
+      game = latestGame
+      render()
+      return
+    }
+
+    latestGame.phase = 'opening'
+    latestGame.message = '双方已准备：早餐起手阶段，双方各抽2张'
+    latestGame.mealIndex = 0
+    latestGame.turn = null
+    resetMealState(latestGame)
 
     await window.LiluOnline.updateRoom(roomId, {
       status: 'playing',
-      game: next
+      game: latestGame
     })
   } catch (err) {
     startRequested = false
