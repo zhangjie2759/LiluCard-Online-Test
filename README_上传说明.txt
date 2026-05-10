@@ -1,28 +1,23 @@
-利禄卡 Online v3.0 iPhone流畅优化版
+利禄卡 Online v3.1 图片加载修复版
 
-针对 iPhone 单机也卡、刚进卡、卡牌信息读不清做了优化：
+这版针对“iPhone 流畅了，但图片加载不出来”做修复：
 
-1. Canvas DPR 限制到最高 2
-   - iPhone 原本常见 DPR=3，实际渲染像素约 9 倍
-   - 限制后渲染压力明显下降，同时保留清晰度
+1. 修复 iPhone Safari / 微信内置浏览器图片不显示：
+   - v3.0 使用 img.decode() 等待解码；
+   - Safari 有时 decode 不 resolve，导致图片下载完也一直不显示；
+   - v3.1 改成 onload 后立即显示图片。
 
-2. 图片改为渐进预加载
-   - 先加载 4 张卡背
-   - 正面卡图分批加载，不再刚进入就一次性解码全部图片
-   - 减少刚进游戏卡顿
+2. 图片路径加入缓存版本号：
+   - 图片实际请求会变成 images/cards/xxx.png?v33
+   - 避免 iPhone 或微信继续使用旧的失败缓存。
 
-3. 卡牌信息增强
-   - 卡牌缩小时会叠加 kcal 标签
-   - 尺寸允许时会叠加简短菜名
-   - 解决放久/卡牌多时看不清卡片信息的问题
+3. 图片渐进加载加快：
+   - 每批从 2 张改成 4 张；
+   - 间隔从 120ms 改成 80ms；
+   - 仍然比一次性全加载流畅，但补图更快。
 
-4. iPhone 解码优化
-   - 使用 decoding='async'
-   - 图片加载后节流重绘，减少连续 render
-
-5. 联机轮询从 200ms 降到 420ms
-   - 减少 iPhone 后台请求和重绘压力
-   - 保留点击后主动同步机制，不完全依赖轮询
+4. 点击任意按钮时会重试失败图片：
+   - 如果某张图片临时失败，会在下次点击时自动重新请求。
 
 上传到 GitHub 仓库根目录，替换：
 - index.html
@@ -30,8 +25,14 @@
 - online.js
 
 继续保留：
-- images/cards 文件夹
-- audio/bgm.mp3
+- images/cards
+- 如果需要音乐，保留 audio/bgm.mp3
+
+注意：
+这次 zip 不包含 audio 文件夹。
 
 上传后用这个链接测试：
-https://zhangjie2759.github.io/LiluCard-Online-Test/?v=32
+https://zhangjie2759.github.io/LiluCard-Online-Test/?v=33
+
+如果图片还是不出来，直接打开一张卡图地址检查路径，例如：
+https://zhangjie2759.github.io/LiluCard-Online-Test/images/cards/chicken_wing.png?v33

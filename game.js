@@ -1,5 +1,5 @@
 // game.js
-// 利禄卡 Online v3.0 iPhone流畅优化版：DPR限制 / 渐进加载 / 卡牌信息增强
+// 利禄卡 Online v3.1 图片加载修复版：修复 iPhone Safari 图片不显示
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -97,6 +97,9 @@ const CARD_BACK_PATHS = {
   '主食': 'images/cards/yellow_back.png',
   '甜点': 'images/cards/blue_back.png'
 }
+
+// 图片缓存版本号：用于强制 iPhone / 微信浏览器重新请求图片，避免旧失败缓存。
+const IMAGE_CACHE_VERSION = 'v33'
 
 const TYPE_COLORS = {
   '荤': '#FF9BB4',
@@ -1633,19 +1636,30 @@ function requestRender() {
 }
 
 
+
+
+function retryFailedImages() {
+  Object.keys(imageCache).forEach(key => {
+    const img = imageCache[key]
+    if (img && img.failed) {
+      delete imageCache[key]
+      getImage(key)
+    }
+  })
+}
+
 function preloadGameImages() {
   const backs = Object.keys(CARD_BACK_PATHS).map(key => CARD_BACK_PATHS[key])
   const fronts = Object.keys(CARD_IMAGE_PATHS).map(key => CARD_IMAGE_PATHS[key])
 
-  // 先加载 4 张卡背，保证底牌/对方隐藏牌不会空白。
+  // 先加载卡背，保证底牌和对方隐藏牌不空白。
   backs.forEach(src => getImage(src))
 
-  // 正面卡图不要一次性全部解码，iPhone 刚进游戏会卡。
-  // 分批渐进加载，每批 2 张。
+  // iPhone 流畅优先：仍然渐进加载，但每批 4 张，比 v3.0 更快补齐图片。
   let index = 0
 
   function step() {
-    const batchSize = 2
+    const batchSize = 4
 
     for (let i = 0; i < batchSize && index < fronts.length; i++) {
       getImage(fronts[index])
@@ -1653,11 +1667,11 @@ function preloadGameImages() {
     }
 
     if (index < fronts.length) {
-      setTimeout(step, 120)
+      setTimeout(step, 80)
     }
   }
 
-  setTimeout(step, 180)
+  setTimeout(step, 80)
 }
 
 // =========================
@@ -1859,9 +1873,12 @@ function hitButton(x, y) {
 const imageCache = {}
 
 
+
 function getImage(src) {
   if (!src) return null
-  if (imageCache[src]) return imageCache[src]
+
+  const cacheKey = src
+  if (imageCache[cacheKey]) return imageCache[cacheKey]
 
   const img = new Image()
   img.loaded = false
@@ -1870,30 +1887,24 @@ function getImage(src) {
   img.loading = 'eager'
 
   img.onload = () => {
-    // Safari 对 decode 支持不稳定，所以失败也直接标记 loaded。
-    if (img.decode) {
-      img.decode()
-        .then(() => {
-          img.loaded = true
-          requestRender()
-        })
-        .catch(() => {
-          img.loaded = true
-          requestRender()
-        })
-    } else {
-      img.loaded = true
-      requestRender()
-    }
+    // v3.1：iPhone Safari / 微信内置浏览器里 decode() 偶尔不 resolve，
+    // 会导致图片其实下载完了但一直不显示。
+    // 所以 onload 后立即标记 loaded，不再等待 decode。
+    img.loaded = true
+    img.failed = false
+    requestRender()
   }
 
   img.onerror = () => {
+    img.loaded = false
     img.failed = true
     requestRender()
   }
 
-  img.src = src
-  imageCache[src] = img
+  const connector = src.indexOf('?') >= 0 ? '&' : '?'
+  img.src = `${src}${connector}${IMAGE_CACHE_VERSION}`
+
+  imageCache[cacheKey] = img
   return img
 }
 
@@ -2735,6 +2746,8 @@ function onPointer(clientX, clientY) {
   if (id !== 'music_toggle') {
     startBgm()
   }
+
+  retryFailedImages()
 
   buttonPulse[id] = Date.now()
   requestRender()
