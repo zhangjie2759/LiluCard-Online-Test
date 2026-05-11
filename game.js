@@ -1,74 +1,21 @@
 // game.js
-// 利禄卡 Online v6.1 美食塔罗稳定版
+// 利禄卡 Online v2.9 BGM 版：加入循环背景音乐
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
 const canvas = document.getElementById('gameCanvas')
 const ctx = canvas.getContext('2d')
 
-let W = 0
-let H = 0
-let DPR = 1
-let SAFE_TOP = 18
-let SAFE_BOTTOM = 18
-let resizeRenderReady = false
+let W = window.innerWidth
+let H = window.innerHeight
+const DPR = window.devicePixelRatio || 1
 
-function getViewportSize() {
-  const vv = window.visualViewport
+canvas.width = W * DPR
+canvas.height = H * DPR
+ctx.scale(DPR, DPR)
 
-  const width = Math.floor((vv && vv.width) || window.innerWidth || document.documentElement.clientWidth || 390)
-  const height = Math.floor((vv && vv.height) || window.innerHeight || document.documentElement.clientHeight || 780)
-
-  return {
-    width: Math.max(320, width),
-    height: Math.max(560, height)
-  }
-}
-
-function getTargetDpr(width, height) {
-  const raw = window.devicePixelRatio || 1
-  const area = width * height
-
-  // iPhone 17 Pro / Pro Max 一类设备 CSS 视口更大、DPR 更高。
-  // 如果继续用 DPR=2 或 3，Canvas 实际像素会很重，容易变形和卡。
-  if (raw >= 3 && area > 380000) return 1.45
-  if (raw >= 3 && area > 330000) return 1.65
-
-  return Math.min(raw, 1.85)
-}
-
-function resizeCanvas(force) {
-  const size = getViewportSize()
-  const nextW = size.width
-  const nextH = size.height
-  const nextDpr = getTargetDpr(nextW, nextH)
-
-  if (!force && W === nextW && H === nextH && Math.abs(DPR - nextDpr) < 0.01) return
-
-  W = nextW
-  H = nextH
-  DPR = nextDpr
-
-  const vv = window.visualViewport
-  SAFE_TOP = Math.max(18, Math.round(((vv && vv.offsetTop) || 0) + 18))
-  SAFE_BOTTOM = Math.max(18, H < 700 ? 14 : 18)
-
-  canvas.style.width = `${W}px`
-  canvas.style.height = `${H}px`
-  canvas.width = Math.max(1, Math.floor(W * DPR))
-  canvas.height = Math.max(1, Math.floor(H * DPR))
-
-  // 关键：用 setTransform 重置矩阵，避免 resize 后重复 scale 造成画面变形。
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0)
-  ctx.imageSmoothingEnabled = true
-  ctx.imageSmoothingQuality = 'medium'
-
-  if (resizeRenderReady && typeof requestRender === 'function') {
-    requestRender()
-  }
-}
-
-resizeCanvas(true)
+const SAFE_TOP = 18
+const SAFE_BOTTOM = 18
 
 const TOTAL_ORDERS_PER_DAY = 10
 
@@ -146,7 +93,6 @@ const CARD_BACK_PATHS = {
   '甜点': 'images/cards/blue_back.png'
 }
 
-
 const TYPE_COLORS = {
   '荤': '#FF9BB4',
   '素': '#A9F0D1',
@@ -170,262 +116,8 @@ let buttons = []
 let message = ''
 let rulesExpanded = false
 let tarotCard = null
-
-// =========================
-// 中英文切换
-// =========================
-let lang = localStorage.getItem('lilucard_lang') || 'zh'
-
-const I18N = {
-  zh: {
-    langBtn: 'EN',
-    title: '利禄卡',
-    subtitle: '卡路里外卖对战',
-    slogan: '我的嘴，就是秤。',
-    modes: '单机 / 开房间 / 加入房间',
-    rules: '游戏规则',
-    howToPlay: '游戏规则',
-    close: '收起',
-    solo: '单机游戏',
-    create: '开房间',
-    join: '加入房间',
-    music: '音乐',
-    musicOn: '音乐开',
-    musicOff: '音乐关',
-    musicErr: '音乐失败',
-    home: '首页',
-    opponent: '对手',
-    you: '你',
-    room: '房间',
-    waitingJoin: '等待另一名玩家加入',
-    readyStatus: '准备状态',
-    player1: '玩家1',
-    player2: '玩家2',
-    ready: '已准备',
-    notReady: '未准备',
-    readyBtn: '准备',
-    meat: '荤',
-    veg: '素',
-    staple: '主食',
-    dessert: '甜点',
-    eat: '开吃',
-    wait: '等待',
-    opening: '起手中',
-    ordering: '点餐中',
-    watching: '观察中',
-    busted: '爆牌',
-    stood: '已开吃',
-    orders: '外卖',
-    totalKcal: '全日总热量',
-    settledKcal: '已结算热量',
-    kcal: 'kcal',
-    unknownKcal: '? + ',
-    warning: '警戒线',
-    rivalOrdering: '对方点餐中',
-    waitRival: '等待对方操作',
-    reveal: '展示夜宵',
-    night: '夜宵',
-    result: '结算',
-    finalResult: '今日结算',
-    nextRound: '准备下一局',
-    restartHome: '返回首页',
-    confirmedWait: '已确认，等待对方',
-    noRecord: '无记录',
-    noOrders: '无外卖',
-    youWonMeal: '本餐你赢了',
-    youLostMeal: '本餐你输了',
-    mealDraw: '本餐平局',
-    quoteWin: '你很会吃啊，小朋友。',
-    quoteLose: '你会吃有个屁用。',
-    quoteDraw: '你俩都挺能装。',
-    yourOrders: '你的外卖',
-    rivalOrders: '对方外卖',
-    confirmGo: '确认进入',
-    finalWin: '恭喜你赢了！',
-    finalLose: '你输了',
-    finalDraw: '平局',
-    finalWinSub: '你赢得了这一整局',
-    finalLoseSub: '对方赢得了这一整局',
-    finalDrawSub: '双方今天吃得不相上下',
-    yourTurn: '你的回合',
-    chooseOrEat: '选外卖或开吃',
-    draw2: '双方可同时抽',
-    pickAll: '选完后展示',
-    rulesLines: [
-      '🎯 胜负目标',
-      '每餐胜利 = 1分。一天共 4 餐，最终分数高者获胜。',
-
-      '🔁 游戏流程',
-      '游戏分为：早餐 → 午餐 → 晚餐 → 夜宵。',
-      '每餐你可以重复选择：点外卖，或开吃。',
-      '当双方都开吃后，自动结算本餐胜负。',
-
-      '⚠️ 爆牌规则',
-      '每餐都有一个警戒线。',
-      '总热量超过警戒线 = 爆牌。',
-      '爆牌者本餐直接输。',
-      '爆牌这一餐的热量不会计入今日总热量。',
-
-      '👀 信息规则',
-      '对方第一张是暗牌。',
-      '后续抽的都是明牌。',
-      '对方热量显示为：？ + 明牌热量。',
-
-      '🧠 卡牌特性',
-      '每张牌都有不同热量。',
-      '有低热量补分牌，也有高热量风险牌。',
-      '刺客牌看起来安全，但容易让你意外爆牌。',
-
-      '🧩 牌型系统',
-      '牌型仅在不爆牌时生效。',
-      '中级牌型奖励：+1张荤牌计入今日总热量。',
-      '双拼套餐：任意两类 ≥2张。',
-      '偏科套餐：任意一类 ≥3张。',
-      '高级牌型奖励：本餐直接+1分。',
-      '满汉大餐：四类齐全且 ≥5张。',
-      '卡线大师：总热量刚好等于警戒线。',
-      '每餐只触发最高级一个牌型。',
-
-      '🌙 夜宵规则',
-      '夜宵会使用剩余所有外卖次数。',
-      '一次性点完，然后统一结算。',
-
-      '✅ 一句话总结',
-      '在不爆的前提下，比对方更接近极限。'
-    ]
-  },
-  en: {
-    langBtn: '中',
-    title: 'LiluCard',
-    subtitle: 'Calorie Takeout Duel',
-    slogan: 'My mouth is the scale.',
-    modes: 'Solo / Create Room / Join Room',
-    rules: 'Rules',
-    howToPlay: 'How to Play',
-    close: 'Close',
-    solo: 'Solo',
-    create: 'Create Room',
-    join: 'Join Room',
-    music: 'Music',
-    musicOn: 'Music On',
-    musicOff: 'Music Off',
-    musicErr: 'Music Err',
-    home: 'Home',
-    opponent: 'Rival',
-    you: 'You',
-    room: 'Room',
-    waitingJoin: 'Waiting for another player',
-    readyStatus: 'Ready',
-    player1: 'P1',
-    player2: 'P2',
-    ready: 'Ready',
-    notReady: 'Not Ready',
-    readyBtn: 'Ready',
-    meat: 'Meat',
-    veg: 'Veg',
-    staple: 'Staple',
-    dessert: 'Dessert',
-    eat: 'Eat',
-    wait: 'Wait',
-    opening: 'Opening',
-    ordering: 'Ordering',
-    watching: 'Watching',
-    busted: 'Busted',
-    stood: 'Eating',
-    orders: 'Orders',
-    totalKcal: 'Day Total',
-    settledKcal: 'Settled',
-    kcal: 'kcal',
-    unknownKcal: '? + ',
-    warning: 'Limit',
-    rivalOrdering: 'Rival ordering',
-    waitRival: 'Wait for rival',
-    reveal: 'Reveal',
-    night: 'Night',
-    result: 'Result',
-    finalResult: 'Final Result',
-    nextRound: 'Next Round',
-    restartHome: 'Home',
-    confirmedWait: 'Confirmed, waiting',
-    noRecord: 'No record',
-    noOrders: 'No orders',
-    youWonMeal: 'You won this meal',
-    youLostMeal: 'You lost this meal',
-    mealDraw: 'Meal draw',
-    quoteWin: 'You really know how to eat.',
-    quoteLose: 'Eating well did nothing.',
-    quoteDraw: 'Both of you can pretend.',
-    yourOrders: 'Your Orders',
-    rivalOrders: 'Rival Orders',
-    confirmGo: 'Go to ',
-    finalWin: 'You Win!',
-    finalLose: 'You Lose',
-    finalDraw: 'Draw',
-    finalWinSub: 'You won the full day',
-    finalLoseSub: 'Rival won the full day',
-    finalDrawSub: 'Both ate equally hard',
-    yourTurn: 'Your turn',
-    chooseOrEat: 'Order or Eat',
-    draw2: 'Draw 2 cards',
-    pickAll: 'Pick all',
-    rulesLines: [
-      '🎯 Goal',
-      'Winning a meal gives 1 point. There are 4 meals in a day. Higher final score wins.',
-
-      '🔁 Game Flow',
-      'The day has 4 meals: Breakfast → Lunch → Dinner → Night Snack.',
-      'During each meal, you may keep ordering cards or choose Eat to stop.',
-      'When both players choose Eat, the meal is settled automatically.',
-
-      '⚠️ Bust Rule',
-      'Each meal has a calorie limit.',
-      'Going over the limit means Bust.',
-      'If you bust, you lose that meal immediately.',
-      'Calories from a busted meal do not count toward your daily total.',
-
-      '👀 Information',
-      'The rival’s first card is hidden.',
-      'All later cards are visible.',
-      'The rival’s calories show as: ? + visible calories.',
-
-      '🧠 Card Traits',
-      'Each card has a different calorie value.',
-      'Some cards are low-calorie fillers, while others are high-risk cards.',
-      'Assassin cards may look safe, but can unexpectedly make you bust.',
-
-      '🧩 Combo System',
-      'Combos only activate if you do not bust.',
-      'Mid combo reward: +1 Meat card added to your daily total.',
-      'Double Combo: any two categories have at least 2 cards each.',
-      'One-Type Combo: any one category has at least 3 cards.',
-      'High combo reward: +1 point for this meal.',
-      'Full Feast: all 4 categories appear and you have at least 5 cards.',
-      'Limit Master: your calories exactly equal the limit.',
-      'Only the highest combo can trigger each meal.',
-
-      '🌙 Night Snack',
-      'Night Snack uses all remaining order chances.',
-      'Choose them all at once, then reveal and settle.',
-
-      '✅ Summary',
-      'Do not bust. Get closer to the limit than your rival.'
-    ]
-  }
-}
-
-function t(key) {
-  const pack = I18N[lang] || I18N.zh
-  return pack[key] !== undefined ? pack[key] : (I18N.zh[key] || key)
-}
-
-function mealName(index) {
-  const names = lang === 'en'
-    ? ['Breakfast', 'Lunch', 'Dinner', 'Night Snack']
-    : ['早餐', '午餐', '晚餐', '夜宵']
-
-  return names[index] || ''
-}
-
+let tarotState = 0 // 0 未出票 / 1 正在出票 / 2 已出票
+let tarotRevealStartedAt = 0
 
 // =========================
 // 背景音乐 BGM
@@ -438,8 +130,6 @@ let bgm = null
 let bgmEnabled = true
 let bgmStarted = false
 let bgmLoadFailed = false
-let bgmStatusText = ''
-let bgmUserInteracted = false
 let localReadyLocked = false
 let startRequested = false
 let startOverlayText = ''
@@ -458,140 +148,64 @@ let onlineActionLockUntil = 0
 
 let game = createGame('single')
 
-
-
-
 function initBgm() {
   if (bgm) return
 
   try {
-    bgm = new Audio()
+    bgm = new Audio(BGM_SRC)
     bgm.loop = true
     bgm.volume = 0.32
     bgm.preload = 'auto'
-    bgm.autoplay = false
-    bgm.muted = false
-    bgm.playsInline = true
-    bgm.setAttribute('playsinline', 'true')
-    bgm.setAttribute('webkit-playsinline', 'true')
-
-    bgm.addEventListener('canplaythrough', () => {
-      bgmLoadFailed = false
-      if (bgmUserInteracted && !bgmStatusText) bgmStatusText = '音乐已加载'
-      requestRender()
-    })
 
     bgm.addEventListener('error', () => {
       bgmLoadFailed = true
-      if (bgmUserInteracted) bgmStatusText = '音乐文件未找到'
       requestRender()
     })
-
-    bgm.src = BGM_SRC
-    bgm.load()
   } catch (err) {
     bgmLoadFailed = true
-    if (bgmUserInteracted) bgmStatusText = '音乐初始化失败'
   }
 }
 
-
-
-
 function startBgm() {
-  bgmUserInteracted = true
   if (!bgmEnabled) return
 
   initBgm()
 
-  if (!bgm || bgmLoadFailed) {
-    bgmStatusText = '音乐文件未找到'
-    requestRender()
-    return
-  }
+  if (!bgm || bgmLoadFailed) return
 
-  try {
-    bgm.muted = false
-    bgm.volume = 0.32
-    if (bgm.readyState === 0) bgm.load()
-  } catch (err) {}
-
-  const playPromise = bgm.play()
-
-  if (playPromise && playPromise.then) {
-    playPromise
-      .then(() => {
-        bgmStarted = true
-        bgmStatusText = ''
-        requestRender()
-      })
-      .catch(() => {
-        bgmStarted = false
-        bgmStatusText = '点音乐启动'
-        requestRender()
-      })
-  } else {
-    bgmStarted = true
-    bgmStatusText = ''
-    requestRender()
-  }
+  bgm.play()
+    .then(() => {
+      bgmStarted = true
+      requestRender()
+    })
+    .catch(() => {
+      // 手机浏览器可能会拦截，等下一次玩家点击再尝试。
+    })
 }
 
-
 function toggleBgm() {
-  bgmUserInteracted = true
   initBgm()
 
-  if (bgmLoadFailed) {
-    bgmStatusText = '音乐文件未找到'
-    requestRender()
-    return
-  }
+  bgmEnabled = !bgmEnabled
 
-  if (!bgmEnabled) {
-    bgmEnabled = true
+  if (bgmEnabled) {
     startBgm()
-    return
+  } else if (bgm) {
+    bgm.pause()
   }
 
-  if (!bgmStarted || (bgm && bgm.paused)) {
-    bgmEnabled = true
-    startBgm()
-    return
-  }
-
-  bgmEnabled = false
-  if (bgm) bgm.pause()
-  bgmStatusText = ''
   requestRender()
 }
 
-
-
-
 function drawMusicButton() {
-  let label = t('music')
+  const label = bgmLoadFailed
+    ? '音乐失败'
+    : bgmEnabled
+      ? '音乐 开'
+      : '音乐 关'
 
-  if (bgmLoadFailed) {
-    label = t('musicErr')
-  } else if (!bgmEnabled) {
-    label = t('musicOff')
-  } else if (bgmStarted && bgm && !bgm.paused) {
-    label = t('musicOn')
-  }
-
-  const y = Math.max(3, SAFE_TOP - 11)
-  const musicW = lang === 'en' ? 64 : 50
-
-  addButton('music_toggle', label, 8, y, musicW, 22, '#FFFFFF', '#111', 9)
-  addButton('lang_toggle', t('langBtn'), 12 + musicW, y, 32, 22, '#FFFFFF', '#111', 10)
-
-  if (bgmStatusText && (!bgmStarted || bgmLoadFailed)) {
-    drawText(bgmStatusText, 50 + musicW, y + 6, 8, bgmLoadFailed ? '#E94335' : '#777', 'left', 'bold')
-  }
+  addButton('music_toggle', label, 16, SAFE_TOP + 2, 82, 30, '#FFFFFF', '#111', 12)
 }
-
-
 
 // =========================
 // 基础工具
@@ -922,88 +536,10 @@ function enterMealPlayingIfReady(g) {
   return true
 }
 
-
-function settleNightNoOrders(g) {
-  const meal = meals[g.mealIndex]
-  const p1Remain = getRemainingOrders(g, 'p1')
-  const p2Remain = getRemainingOrders(g, 'p2')
-
-  g.players.p1.cards = []
-  g.players.p2.cards = []
-  g.players.p1.nightChoices = []
-  g.players.p2.nightChoices = []
-  g.players.p1.stood = true
-  g.players.p2.stood = true
-  g.players.p1.busted = false
-  g.players.p2.busted = false
-
-  g.records.p1.rawMealKcal[g.mealIndex] = 0
-  g.records.p2.rawMealKcal[g.mealIndex] = 0
-  g.records.p1.mealKcal[g.mealIndex] = 0
-  g.records.p2.mealKcal[g.mealIndex] = 0
-  g.records.p1.comboResults[g.mealIndex] = null
-  g.records.p2.comboResults[g.mealIndex] = null
-
-  let winner = null
-  let resultText = '双方都没有外卖机会，夜宵无人得分'
-
-  if (p1Remain <= 0 && p2Remain > 0) {
-    winner = 'p2'
-    g.records.p2.basePoint[g.mealIndex] += 1
-    resultText = '玩家1没有留下外卖机会，玩家2赢得夜宵'
-  } else if (p2Remain <= 0 && p1Remain > 0) {
-    winner = 'p1'
-    g.records.p1.basePoint[g.mealIndex] += 1
-    resultText = '玩家2没有留下外卖机会，玩家1赢得夜宵'
-  }
-
-  const p1Point = getMealPoint(g, 'p1', g.mealIndex)
-  const p2Point = getMealPoint(g, 'p2', g.mealIndex)
-
-  g.lastMealResult = {
-    mealIndex: g.mealIndex,
-    mealName: meal.name,
-    threshold: meal.threshold,
-    p1Cards: [],
-    p2Cards: [],
-    p1Total: 0,
-    p2Total: 0,
-    p1Busted: false,
-    p2Busted: false,
-    p1Combo: null,
-    p2Combo: null,
-    p1Point,
-    p2Point,
-    winner,
-    resultText,
-    scoreText: `玩家1 ${getMealTotalPoint(g, 'p1')} : ${getMealTotalPoint(g, 'p2')} 玩家2`
-  }
-
-  if (!g.mealResults) g.mealResults = meals.map(() => null)
-  g.mealResults[g.mealIndex] = clone(g.lastMealResult)
-
-  g.phase = 'meal_result'
-  g.turn = null
-  g.nextReady = { p1: false, p2: false }
-  g.message = `夜宵结算：${resultText}`
-  g.comboMessage = ''
-  g.actionSeq += 1
-}
-
-
 function enterNightPicking(g) {
   g.phase = 'night_picking'
   g.turn = null
   resetMealState(g)
-
-  const p1Remain = getRemainingOrders(g, 'p1')
-  const p2Remain = getRemainingOrders(g, 'p2')
-
-  if (p1Remain <= 0 || p2Remain <= 0) {
-    settleNightNoOrders(g)
-    return
-  }
-
   g.message = '夜宵开始：不分先后，双方按剩余外卖次数选择搭配'
 }
 
@@ -1316,7 +852,6 @@ function canPlayerAct(g, pid) {
 
 
 
-
 function getActionHint(g, selfId) {
   const oppId = otherPlayer(selfId)
   const self = g.players[selfId]
@@ -1346,31 +881,31 @@ function getActionHint(g, selfId) {
 
     if (g.turn === selfId) {
       if (self.busted || isBusted(g, selfId)) {
-        return '已爆牌：可继续迷惑，或开吃摊牌'
+        return '你的点餐回合：你已爆牌，但可以继续叫外卖迷惑对方，或选择开吃'
       }
 
-      return '你的回合：选外卖或开吃'
+      return '你的点餐回合：请选择外卖或收手'
     }
 
-    return '对方点餐中：等待对方操作'
+    return '对方点餐回合：请等待对方点外卖或开吃；对方底牌热量未知'
   }
 
   if (g.phase === 'night_picking') {
     const remain = getRemainingOrders(g, selfId)
     const oppRemain = getRemainingOrders(g, oppId)
 
-    if (remain > 0) return `夜宵阶段：还要选择 ${remain} 单`
+    if (remain > 0) return `夜宵阶段：不分先后，你还要选择 ${remain} 单`
     if (oppRemain > 0) return '你已选完夜宵，等待对方选完'
     return '双方夜宵已选完，点击展示夜宵'
   }
 
   if (g.phase === 'night_ready') {
-    return '双方夜宵已选完，点击展示夜宵'
+    return '双方夜宵已选完，点击“展示夜宵”后统一揭晓'
   }
 
   if (g.phase === 'meal_result') {
     const next = g.mealIndex >= 3 ? '今日结算' : `进入${meals[g.mealIndex + 1].name}`
-    return `本餐结算完成，点击${next}`
+    return `本餐结算完成，点击「${next}」`
   }
 
   if (g.phase === 'day_result') return '今日结算完成'
@@ -2038,7 +1573,6 @@ function leaveToHome() {
 // =========================
 
 let renderScheduled = false
-resizeRenderReady = true
 
 function requestRender() {
   if (renderScheduled) return
@@ -2056,62 +1590,13 @@ function requestRender() {
   }
 }
 
-
-
-
-
-
-
-function retryFailedImages() {
-  Object.keys(imageFailedUntil).forEach(key => {
-    delete imageFailedUntil[key]
-  })
-  scheduleImageRender()
-}
-
-
-
-
-
-
-
 function preloadGameImages() {
-  const backs = Object.keys(CARD_BACK_PATHS).map(key => CARD_BACK_PATHS[key])
-  const fronts = Object.keys(CARD_IMAGE_PATHS).map(key => CARD_IMAGE_PATHS[key])
+  const srcs = []
 
-  // 卡背优先，保证底牌/隐藏牌先有图。
-  backs.forEach(src => getImage(src, true))
+  Object.keys(CARD_IMAGE_PATHS).forEach(key => srcs.push(CARD_IMAGE_PATHS[key]))
+  Object.keys(CARD_BACK_PATHS).forEach(key => srcs.push(CARD_BACK_PATHS[key]))
 
-  // 正面卡图后台预热，不阻塞游戏流程。
-  // 保守分批，避免刚进入时和 UI 绘制抢主线程。
-  let index = 0
-
-  function step() {
-    const batchSize = 2
-
-    for (let i = 0; i < batchSize && index < fronts.length; i++) {
-      getImage(fronts[index], false)
-      index += 1
-    }
-
-    if (index < fronts.length) {
-      setTimeout(step, 160)
-    }
-  }
-
-  setTimeout(step, 240)
-}
-
-
-let imageRenderTimer = null
-
-function scheduleImageRender() {
-  if (imageRenderTimer) return
-
-  imageRenderTimer = setTimeout(() => {
-    imageRenderTimer = null
-    requestRender()
-  }, 90)
+  srcs.forEach(src => getImage(src))
 }
 
 // =========================
@@ -2311,79 +1796,34 @@ function hitButton(x, y) {
 
 // 图片懒加载
 const imageCache = {}
-const imageFailedUntil = {}
-const IMAGE_RETRY_DELAY = 900
 
-
-
-
-
-
-
-
-
-function getImage(src, priority) {
+function getImage(src) {
   if (!src) return null
-
-  const cached = imageCache[src]
-
-  // 只缓存“已加载成功”或“正在加载中”的图片。
-  // 失败图片不永久缓存，避免某些 iPhone 一次失败后永远显示不出来。
-  if (cached && (cached.loaded || cached.loading)) return cached
-
-  const now = Date.now()
-  if (imageFailedUntil[src] && now < imageFailedUntil[src]) {
-    return null
-  }
+  if (imageCache[src]) return imageCache[src]
 
   const img = new Image()
   img.loaded = false
-  img.loading = true
   img.failed = false
-  img.decoding = 'async'
-  img.loading = 'eager'
 
   img.onload = () => {
     img.loaded = true
-    img.loading = false
-    img.failed = false
-    delete imageFailedUntil[src]
-    scheduleImageRender()
+    requestRender()
   }
 
   img.onerror = () => {
-    img.loaded = false
-    img.loading = false
     img.failed = true
-
-    // 失败后立即从缓存删除，只短暂冷却，之后当前画面需要它时会重新请求。
-    delete imageCache[src]
-    imageFailedUntil[src] = Date.now() + IMAGE_RETRY_DELAY
-
-    setTimeout(() => {
-      if (imageFailedUntil[src] && Date.now() >= imageFailedUntil[src]) {
-        delete imageFailedUntil[src]
-        scheduleImageRender()
-      }
-    }, IMAGE_RETRY_DELAY + 80)
-
-    scheduleImageRender()
+    requestRender()
   }
 
-  // 保持最稳定的原始路径，不加 ?v，不 decode，不等待 loading。
   img.src = src
-
   imageCache[src] = img
   return img
 }
 
-
-
-
 function drawCard(card, x, y, w, h) {
   const type = normalizeType(card)
   const src = card.hidden ? (CARD_BACK_PATHS[type] || CARD_BACK_PATHS['荤']) : CARD_IMAGE_PATHS[card.name]
-  const img = getImage(src, true)
+  const img = getImage(src)
 
   if (img && img.loaded) {
     const radius = 9
@@ -2422,26 +1862,29 @@ function drawCard(card, x, y, w, h) {
     ctx.restore()
 
     if (!card.hidden) drawRoundRect(x, y, w, h, radius, null, '#111', 2)
+
+    if (card.privateCard && !card.hidden) {
+      drawRoundRect(x + 5, y + 5, 32, 18, 7, '#111', null, 0)
+      drawText('底牌', x + 21, y + 8, 10, '#fff', 'center', 'bold')
+    }
+
     return
   }
 
-  // 图片未就绪时，只做轻量占位，不影响玩法。
   drawRoundRect(x, y, w, h, 10, TYPE_COLORS[type] || '#fff', '#111', 2)
-  drawText(card.hidden ? '背面' : String(card.name || '').slice(0, 4), x + w / 2, y + h / 2 - 12, Math.max(9, Math.min(12, w / 4)), '#111', 'center', 'bold')
-  if (!card.hidden) drawText(`${card.kcal}kcal`, x + w / 2, y + h / 2 + 6, Math.max(8, Math.min(11, w / 5)), '#111', 'center', 'bold')
+  drawText(card.hidden ? '背面' : card.name, x + w / 2, y + h / 2 - 12, 12, '#111', 'center', 'bold')
+  if (!card.hidden) drawText(`${card.kcal}kcal`, x + w / 2, y + h - 20, 11, '#111', 'center', 'bold')
 }
-
 
 function drawCards(cards, x, y, areaW, areaH) {
   const list = safeArray(cards)
   if (list.length === 0) return
 
   const gap = 4
-  let cardW = 64
-  if (list.length > 4) cardW = 54
-  if (list.length > 6) cardW = 47
-  if (list.length > 8) cardW = 42
-  if (list.length > 10) cardW = 38
+  let cardW = 62
+  if (list.length > 4) cardW = 52
+  if (list.length > 6) cardW = 44
+  if (list.length > 8) cardW = 38
 
   const perRow = Math.max(3, Math.floor((areaW + gap) / (cardW + gap)))
   const rows = Math.ceil(list.length / perRow)
@@ -2461,6 +1904,113 @@ function drawCards(cards, x, y, areaW, areaH) {
 // =========================
 
 
+// =========================
+// 首页：美食塔罗牌出票口模块
+// =========================
+
+function pickTarotCard() {
+  const list = FOOD_CARDS || []
+  if (!list.length) return null
+  return list[Math.floor(Math.random() * list.length)]
+}
+
+function easeOutCubic(t) {
+  const x = Math.max(0, Math.min(1, t))
+  return 1 - Math.pow(1 - x, 3)
+}
+
+function drawTarotMiniCard(card, x, y, w, h) {
+  const type = card ? normalizeType(card) : '甜点'
+  drawRoundRect(x + 4, y + 5, w, h, 12, '#111', null, 0)
+  drawRoundRect(x, y, w, h, 12, TYPE_COLORS[type] || '#FFE169', '#111', 2.4)
+
+  ctx.save()
+  ctx.globalAlpha = 0.18
+  drawRoundRect(x + 10, y + 10, w - 20, h - 20, 10, '#FFFFFF', null, 0)
+  ctx.restore()
+
+  drawText('FOOD', x + w / 2, y + 12, 10, '#111', 'center', 'bold')
+  drawText('TAROT', x + w / 2, y + 28, 14, '#111', 'center', 'bold')
+  drawRoundRect(x + 12, y + 48, w - 24, 34, 15, '#FFFFFF', '#111', 2)
+  drawText(card ? card.name : '???', x + w / 2, y + 56, 13, '#111', 'center', 'bold')
+  if (card) drawText(`${card.kcal} kcal`, x + w / 2, y + h - 26, 11, '#111', 'center', 'bold')
+}
+
+function drawTarotSlot(panelX, panelY, panelW, panelH) {
+  if (rulesExpanded) return
+
+  const cx = W / 2
+  const slotW = Math.min(230, panelW - 68)
+  const slotH = 38
+  const slotX = cx - slotW / 2
+  const slotY = Math.min(panelY + panelH - 188, panelY + 242)
+
+  const cardW = Math.min(96, panelW * 0.28)
+  const cardH = Math.round(cardW * 1.42)
+  const cardX = cx - cardW / 2
+
+  // 只登记点击区，不画系统按钮外观。
+  buttons.push({ id: 'tarot_slot', x: slotX - 10, y: slotY - 30, w: slotW + 20, h: cardH + 118 })
+
+  drawText('美食塔罗牌', cx, slotY - 28, 16, '#111', 'center', 'bold')
+  drawText('点一下，今天吃什么', cx, slotY - 10, 11, '#777', 'center', 'bold')
+
+  let progress = tarotState === 2 ? 1 : 0
+  if (tarotState === 1) {
+    progress = easeOutCubic((Date.now() - tarotRevealStartedAt) / 760)
+    if (progress >= 1) {
+      tarotState = 2
+      progress = 1
+    } else {
+      requestRender()
+    }
+  }
+
+  if ((tarotState === 1 || tarotState === 2) && tarotCard) {
+    const hiddenTop = cardH * 0.74
+    const finalY = slotY + slotH - 8
+    const startY = slotY + slotH - hiddenTop
+    const cardY = startY + (finalY - startY) * progress
+
+    ctx.save()
+    ctx.beginPath()
+    // 从出票口下沿开始裁切：上半部分永远像是在黑洞里。
+    ctx.rect(cardX - 8, slotY + slotH * 0.52, cardW + 16, cardH + 28)
+    ctx.clip()
+    drawTarotMiniCard(tarotCard, cardX, cardY, cardW, cardH)
+    ctx.restore()
+  }
+
+  // 黑色出票口最后画，压住卡牌上端。
+  drawRoundRect(slotX + 4, slotY + 7, slotW, slotH, 18, 'rgba(0,0,0,0.18)', null, 0)
+  drawRoundRect(slotX, slotY, slotW, slotH, 18, '#111', '#111', 2)
+  drawRoundRect(slotX + 18, slotY + 12, slotW - 36, 10, 5, '#2A2A2A', null, 0)
+  drawText(tarotState === 0 ? '点击出票' : '正在出票', cx, slotY + 9, 13, '#FFE169', 'center', 'bold')
+
+  if (tarotState === 2 && tarotCard) {
+    const textY = slotY + slotH + cardH + 18
+    drawRoundRect(cx - 104, textY - 7, 208, 34, 17, '#111', null, 0)
+    drawText(`你今天适合吃${tarotCard.name}`, cx, textY + 1, 13, '#FFE169', 'center', 'bold')
+    drawText('再点一次重新抽', cx, textY + 38, 10, '#777', 'center', 'bold')
+  }
+}
+
+function handleTarotSlotTap() {
+  if (rulesExpanded) return
+
+  if (tarotState === 0) {
+    tarotCard = pickTarotCard()
+    tarotState = 1
+    tarotRevealStartedAt = Date.now()
+  } else {
+    tarotState = 0
+    tarotCard = null
+    tarotRevealStartedAt = 0
+  }
+
+  requestRender()
+}
+
 
 function drawHome() {
   const panelX = 24
@@ -2471,60 +2021,45 @@ function drawHome() {
 
   drawRoundRect(-40, H - 220, 160, 160, 36, '#A9F0D1', null, 0)
   drawRoundRect(W - 92, SAFE_TOP + 90, 130, 130, 32, '#FF9BB4', null, 0)
+
   drawRoundRect(panelX, panelY, panelW, panelH, 28, '#FFFFFF', '#111', 4)
 
   if (!rulesExpanded) {
-    drawText(t('title'), W / 2, panelY + 28, lang === 'en' ? 43 : 48, '#111', 'center', 'bold')
-    drawText('LILU CARDS', W / 2, panelY + 90, 16, '#555', 'center', 'bold')
+    drawText('利禄卡', W / 2, panelY + 12, 44, '#111', 'center', 'bold')
+    drawText('LILU CARDS', W / 2, panelY + 66, 14, '#555', 'center', 'bold')
 
-    drawRoundRect(W / 2 - 104, panelY + 126, 208, 40, 18, '#111', null, 0)
-    drawText(t('subtitle'), W / 2, panelY + 136, lang === 'en' ? 14 : 17, '#FFE169', 'center', 'bold')
+    drawRoundRect(W / 2 - 92, panelY + 92, 184, 36, 18, '#111', null, 0)
+    drawText('卡路里外卖对战', W / 2, panelY + 101, 15, '#FFE169', 'center', 'bold')
 
-    drawText(t('slogan'), W / 2, panelY + 212, lang === 'en' ? 23 : 28, '#111', 'center', 'bold')
-    drawText(t('modes'), W / 2, panelY + 254, 15, '#555', 'center', 'bold')
+    // v6.4：主视觉文案整体上移，为黑色出票口留出空间。
+    drawText('我的嘴，就是秤。', W / 2, panelY + 142, 23, '#111', 'center', 'bold')
+    drawText('单机 / 开房间 / 加入房间', W / 2, panelY + 172, 13, '#555', 'center', 'bold')
 
-    // ===== 美食塔罗：只在首页内部绘制，不外挂 render，避免白屏 =====
-    const tarotY = panelY + 286
-    const tarotBtnW = Math.min(190, panelW - 80)
+    drawTarotSlot(panelX, panelY, panelW, panelH)
 
-    addButton('tarot', lang === 'en' ? 'Food Tarot' : '今日美食塔罗', W / 2 - tarotBtnW / 2, tarotY, tarotBtnW, 38, '#111', '#fff', lang === 'en' ? 14 : 15)
-
-    if (tarotCard) {
-      const tarotCardW = H < 720 ? 52 : 58
-      const tarotCardH = Math.round(tarotCardW * 1121 / 671)
-      const cardY = tarotY + 48
-
-      drawCard({ ...tarotCard, hidden: false }, W / 2 - tarotCardW / 2, cardY, tarotCardW, tarotCardH)
-
-      const foodName = lang === 'en' ? (tarotCard.english || tarotCard.name) : tarotCard.name
-      const line = lang === 'en'
-        ? `Today, try ${foodName}`
-        : `今天建议吃 ${foodName}`
-
-      drawText(line, W / 2, cardY + tarotCardH + 8, 13, '#111', 'center', 'bold')
-    } else {
-      drawText(
-        lang === 'en' ? 'Tap for today’s food hint' : '点击抽取今日美食灵感',
-        W / 2,
-        tarotY + 47,
-        12,
-        '#666',
-        'center',
-        'bold'
-      )
-    }
-
-    const ruleBtnW = Math.min(panelW - 64, 220)
-    addButton('rules_toggle', t('howToPlay'), W / 2 - ruleBtnW / 2, panelY + panelH - 64, ruleBtnW, 42, '#FFFFFF', '#111', 16)
+    const ruleBtnW = Math.min(panelW - 64, 210)
+    addButton('rules_toggle', '查看游戏规则', W / 2 - ruleBtnW / 2, panelY + panelH - 64, ruleBtnW, 42, '#FFFFFF', '#111', 16)
   } else {
-    drawText(t('rules'), panelX + 24, panelY + 20, 28, '#111', 'left', 'bold')
-    addButton('rules_toggle', t('close'), panelX + panelW - 92, panelY + 18, 68, 34, '#111', '#fff', 14)
+    drawText('游戏规则', panelX + 24, panelY + 20, 28, '#111', 'left', 'bold')
+    addButton('rules_toggle', '收起', panelX + panelW - 88, panelY + 18, 58, 34, '#111', '#fff', 14)
 
     const viewX = panelX + 24
     const viewY = panelY + 66
     const viewW = panelW - 48
     const viewH = panelH - 88
-    const lines = t('rulesLines')
+
+    const lines = [
+      '1. 双方准备后开局，早餐 / 午餐 / 晚餐 / 夜宵共 4 小局。',
+      '2. 每局先进入起手阶段，双方各抽 2 张：第 1 张是底牌，第 2 张是明牌；起手不消耗外卖次数。',
+      '3. 早餐起手完成后随机先手；午餐自动换另一方先手；晚餐换回早餐先手方。',
+      '4. 点餐阶段轮流操作。轮到你时，可选择 荤 / 素 / 主食 / 甜点，或点击收手。',
+      '5. 对方只有底牌未知，其余明牌可见；对方热量显示为「? + 明牌热量」。',
+      '6. 爆牌不会立刻摊牌，你还可以继续点外卖迷惑对方；只有主动开吃才结束。',
+      '7. 双方都收手后进入本餐结算，公开双方全部外卖、热量、爆牌情况和胜负。',
+      '8. 夜宵不分先后，双方用剩余外卖次数选择搭配；双方选完后点击展示夜宵再结算。',
+      '9. 四局结束后进入今日结算，比分更高者获胜；平局则双方都很会吃。',
+      '10. 联机结束后不会退出房间，双方可继续准备下一整局。'
+    ]
 
     ctx.save()
     ctx.beginPath()
@@ -2548,36 +2083,28 @@ function drawHome() {
     if (rulesMaxScroll > 0) {
       const barH = Math.max(28, viewH * viewH / (contentH || viewH))
       const barY = viewY + (viewH - barH) * (rulesScroll / rulesMaxScroll)
-
       drawRoundRect(viewX + viewW + 6, barY, 4, barH, 3, '#111', null, 0)
-      drawText(lang === 'en' ? 'Swipe' : '上下滑动', W / 2, panelY + panelH - 18, 10, '#777', 'center', 'bold')
+      drawText('上下滑动', W / 2, panelY + panelH - 18, 10, '#777', 'center', 'bold')
     }
   }
 
   const bottomY = H - SAFE_BOTTOM - 154
-
-  addButton('single_start', t('solo'), 32, bottomY, W - 64, 54, '#111', '#fff', 22)
+  addButton('single_start', '单机游戏', 32, bottomY, W - 64, 54, '#111', '#fff', 22)
 
   const gap = 12
   const halfW = (W - 64 - gap) / 2
-
-  addButton('online_create', t('create'), 32, bottomY + 68, halfW, 54, '#FFE169', '#111', lang === 'en' ? 16 : 20)
-  addButton('online_join', t('join'), 32 + halfW + gap, bottomY + 68, halfW, 54, '#9EDBFF', '#111', lang === 'en' ? 16 : 20)
+  addButton('online_create', '开房间', 32, bottomY + 68, halfW, 54, '#FFE169', '#111', 20)
+  addButton('online_join', '加入房间', 32 + halfW + gap, bottomY + 68, halfW, 54, '#9EDBFF', '#111', 20)
 
   if (message) wrapText(message, 32, H - SAFE_BOTTOM - 24, W - 64, 14, 11, '#E94335', 'bold', 1)
+
+  drawMusicButton()
 }
 
 
-
-
-
 function drawHomeMiniButton() {
-  if (appMode === 'home') return
-
-  const y = Math.max(3, SAFE_TOP - 11)
-  const w = lang === 'en' ? 46 : 38
-
-  addButton('home', t('home'), W - w - 8, y, w, 22, '#FFFFFF', '#111', 9)
+  if (appMode !== 'single') return
+  addButton('home', '首页', W - 74, SAFE_TOP + 2, 54, 30, '#FFFFFF', '#111', 13)
 }
 
 function drawTopBadge() {
@@ -2599,16 +2126,18 @@ function getDisplayPlayerIds() {
 
 
 
-
 function drawPlayerPanel(pid, label, x, y, w, h, isOpponent) {
   const player = game.players[pid]
   const meal = getMeal()
+
   const inResultPhase = game.phase === 'meal_result' || game.phase === 'day_result'
   const hiddenForOpponent = isOpponent && !inResultPhase
 
   const displayCards = safeArray(player.cards).map((card, index) => {
     const next = { ...card }
 
+    // v2.5：对方只有第一张底牌隐藏，后续外卖牌都明牌。
+    // 自己的底牌自己可见；结算页全部公开。
     if (hiddenForOpponent && next.privateCard) {
       next.hidden = true
     } else if (!inResultPhase) {
@@ -2620,54 +2149,57 @@ function drawPlayerPanel(pid, label, x, y, w, h, isOpponent) {
 
   const total = calcCardsKcal(player.cards)
   const visibleTotal = hiddenForOpponent ? getVisibleKcal(displayCards) : total
+
   const theme = getMealTheme(game.mealIndex)
   const bg = isOpponent ? theme.opponentPanel : theme.panel
 
-  let status = t('watching')
+  let status = '观察中'
 
   if (hiddenForOpponent) {
+    // 结算前仍然不暴露对方是否爆牌。
     status = player.stood
-      ? t('stood')
+      ? '已收手'
       : game.phase === 'meal_playing' && game.turn === pid
-        ? t('ordering')
+        ? '点餐中'
         : game.phase === 'opening'
-          ? t('opening')
-          : t('watching')
+          ? '起手中'
+          : '观察中'
   } else {
     status = player.busted || isBusted(game, pid)
-      ? t('busted')
+      ? '爆牌'
       : player.stood
-        ? t('stood')
+        ? '已收手'
         : game.phase === 'meal_playing' && game.turn === pid
-          ? t('ordering')
+          ? '点餐中'
           : game.phase === 'opening'
-            ? t('opening')
-            : t('watching')
+            ? '起手中'
+            : '观察中'
   }
 
   drawRoundRect(x, y, w, h, 22, bg, '#111', 3)
-  drawText(label, x + 16, y + 12, H < 720 ? 21 : 24, '#111', 'left', 'bold')
-  drawText(status, x + 72, y + 18, H < 720 ? 12 : 14, status === t('busted') ? '#E94335' : '#111', 'left', 'bold')
+
+  drawText(label, x + 16, y + 12, 24, '#111', 'left', 'bold')
+  drawText(status, x + 76, y + 18, 14, status === '爆牌' ? '#E94335' : '#111', 'left', 'bold')
 
   const kcalText = hiddenForOpponent
-    ? `${t('unknownKcal')}${visibleTotal} ${t('kcal')}`
-    : `${total}/${meal.threshold} ${t('kcal')}`
+    ? `? + ${visibleTotal} kcal`
+    : `${total}/${meal.threshold} kcal`
 
-  drawText(kcalText, x + w - 16, y + 15, H < 720 ? 13 : 16, status === t('busted') ? '#E94335' : '#111', 'right', 'bold')
-  drawText(`${t('orders')} ${game.records[pid].dayOrdersUsed}/${TOTAL_ORDERS_PER_DAY}`, x + 16, y + 44, H < 720 ? 11 : 13, '#666', 'left', 'bold')
+  drawText(kcalText, x + w - 16, y + 15, 16, status === '爆牌' ? '#E94335' : '#111', 'right', 'bold')
+  drawText(`外卖 ${game.records[pid].dayOrdersUsed}/${TOTAL_ORDERS_PER_DAY}`, x + 16, y + 44, 13, '#666', 'left', 'bold')
 
   const dayText = hiddenForOpponent
-    ? `${t('settledKcal')} ${getDayTotalKcal(game, pid)}`
-    : `${t('totalKcal')} ${getDayTotalKcal(game, pid) + (inResultPhase ? 0 : total)}`
+    ? `已结算热量 ${getDayTotalKcal(game, pid)}`
+    : `全日总热量 ${getDayTotalKcal(game, pid) + (inResultPhase ? 0 : total)}`
 
-  drawText(dayText, x + 108, y + 44, H < 720 ? 11 : 13, '#111', 'left', 'bold')
+  drawText(dayText, x + 118, y + 44, 13, '#111', 'left', 'bold')
 
   let cardsToDraw = displayCards
 
   if ((game.phase === 'night_picking' || game.phase === 'night_ready') && safeArray(player.nightChoices).length > 0) {
     cardsToDraw = safeArray(player.nightChoices).map((type, index) => ({
       id: `night_${index}`,
-      name: `${t('night')}${index + 1}`,
+      name: `夜宵${index + 1}`,
       type,
       kcal: 0,
       hidden: true,
@@ -2680,10 +2212,6 @@ function drawPlayerPanel(pid, label, x, y, w, h, isOpponent) {
 
 
 
-
-
-
-
 function drawCenterPanel(x, y, w, h) {
   const meal = getMeal()
   const selfId = getSelfId()
@@ -2692,18 +2220,28 @@ function drawCenterPanel(x, y, w, h) {
   const theme = getMealTheme(game.mealIndex)
 
   drawRoundRect(x, y, w, h, 18, theme.center, '#111', 3)
-  drawText(`${game.mealIndex + 1}/4  ${mealName(game.mealIndex)}`, x + 16, y + 10, H < 720 ? 17 : 19, '#111', 'left', 'bold')
 
-  const barX = x + 16
-  const barY = y + Math.max(34, Math.floor(h * 0.48))
-  const barW = w - 32
-  const barH = H < 720 ? 18 : 20
-  const r = barH / 2
+  drawText(`${game.mealIndex + 1}/4  ${meal.name}`, x + 16, y + 10, 20, '#111', 'left', 'bold')
+
+  const barX = x + w - 214
+  const barY = y + 15
+  const barW = 196
+  const barH = 28
+  const r = 14
 
   ctx.save()
   drawRoundRect(barX, barY, barW, barH, r, '#FFFFFF', null, 0)
   ctx.beginPath()
-  ctx.rect(barX, barY, barW, barH)
+  ctx.moveTo(barX + r, barY)
+  ctx.lineTo(barX + barW - r, barY)
+  ctx.quadraticCurveTo(barX + barW, barY, barX + barW, barY + r)
+  ctx.lineTo(barX + barW, barY + barH - r)
+  ctx.quadraticCurveTo(barX + barW, barY + barH, barX + barW - r, barY + barH)
+  ctx.lineTo(barX + r, barY + barH)
+  ctx.quadraticCurveTo(barX, barY + barH, barX, barY + barH - r)
+  ctx.lineTo(barX, barY + r)
+  ctx.quadraticCurveTo(barX, barY, barX + r, barY)
+  ctx.closePath()
   ctx.clip()
 
   const fillColor = selfTotal >= meal.threshold
@@ -2716,16 +2254,18 @@ function drawCenterPanel(x, y, w, h) {
   ctx.fillRect(barX, barY, barW * ratio, barH)
   ctx.restore()
 
-  drawRoundRect(barX, barY, barW, barH, r, null, '#111', 2.5)
-  drawText(`${t('warning')} ${meal.threshold}`, barX + barW / 2, barY + (H < 720 ? 3 : 4), H < 720 ? 10 : 11, '#111', 'center', 'bold')
+  drawRoundRect(barX, barY, barW, barH, r, null, '#111', 3)
+  drawText(`警戒线 ${meal.threshold}`, barX + barW / 2, barY + 7, 12, '#111', 'center', 'bold')
+
+  const hint = getActionHint(game, selfId)
+  wrapText(hint, x + 16, y + 48, w - 32, 18, 13, '#333', 'bold', 2)
 }
 
 
 
 
-
 function drawActionButtons() {
-  const y = H - SAFE_BOTTOM - 84
+  const y = H - SAFE_BOTTOM - 86
   const gap = 10
   const leftW = Math.floor((W - 32) * 0.52)
   const rightW = W - 32 - leftW - gap
@@ -2733,88 +2273,82 @@ function drawActionButtons() {
   const smallGap = 8
   const smallW = (leftW - smallGap) / 2
   const smallH = (72 - smallGap) / 2
+
   const selfId = getSelfId()
 
-  const drawTypeButtons = canAct => {
-    const disabledFill = '#ddd'
-    const disabledColor = '#666'
-
-    addButton(canAct ? 'draw_meat' : 'noop', t('meat'), leftX, y, smallW, smallH, canAct ? TYPE_COLORS['荤'] : disabledFill, canAct ? '#111' : disabledColor, 16)
-    addButton(canAct ? 'draw_veg' : 'noop', t('veg'), leftX + smallW + smallGap, y, smallW, smallH, canAct ? TYPE_COLORS['素'] : disabledFill, canAct ? '#111' : disabledColor, 16)
-    addButton(canAct ? 'draw_staple' : 'noop', t('staple'), leftX, y + smallH + smallGap, smallW, smallH, canAct ? TYPE_COLORS['主食'] : disabledFill, canAct ? '#111' : disabledColor, 16)
-    addButton(canAct ? 'draw_dessert' : 'noop', t('dessert'), leftX + smallW + smallGap, y + smallH + smallGap, smallW, smallH, canAct ? TYPE_COLORS['甜点'] : disabledFill, canAct ? '#111' : disabledColor, 16)
-  }
-
   if (appMode === 'online' && (!roomData || roomData.status === 'lobby' || game.phase === 'lobby')) {
-    drawTypeButtons(false)
+    addButton('noop', '荤', leftX, y, smallW, smallH, '#ddd', '#555', 18)
+    addButton('noop', '素', leftX + smallW + smallGap, y, smallW, smallH, '#ddd', '#555', 18)
+    addButton('noop', '主食', leftX, y + smallH + smallGap, smallW, smallH, '#ddd', '#555', 18)
+    addButton('noop', '甜点', leftX + smallW + smallGap, y + smallH + smallGap, smallW, smallH, '#ddd', '#555', 18)
 
     const ready = isReadyLockedForMe()
-    addButton(ready ? 'noop' : 'ready', ready ? t('ready') : t('readyBtn'), leftX + leftW + gap, y, rightW, 72, '#FFE169', '#111', 22)
+    addButton(ready ? 'noop' : 'ready', ready ? '已准备' : '准备', leftX + leftW + gap, y, rightW, 72, '#FFE169', '#111', 24)
     return
   }
 
   if (game.phase === 'night_ready') {
-    drawTypeButtons(false)
-    addButton('reveal_night', t('reveal'), leftX + leftW + gap, y, rightW, 72, '#FFE169', '#111', lang === 'en' ? 18 : 22)
+    addButton('noop', '荤', leftX, y, smallW, smallH, '#ddd', '#555', 18)
+    addButton('noop', '素', leftX + smallW + smallGap, y, smallW, smallH, '#ddd', '#555', 18)
+    addButton('noop', '主食', leftX, y + smallH + smallGap, smallW, smallH, '#ddd', '#555', 18)
+    addButton('noop', '甜点', leftX + smallW + smallGap, y + smallH + smallGap, smallW, smallH, '#ddd', '#555', 18)
+    addButton('reveal_night', '展示夜宵', leftX + leftW + gap, y, rightW, 72, '#FFE169', '#111', 22)
+    drawText('双方已选完夜宵，点击展示', leftX + leftW + gap + rightW / 2, y + 50, 10, '#5C4300', 'center', 'bold')
     return
   }
 
   const canAct = canPlayerAct(game, selfId)
-  drawTypeButtons(canAct)
+  const disabledFill = '#ddd'
+  const disabledColor = '#666'
 
-  let standText = t('eat')
+  addButton(canAct ? 'draw_meat' : 'noop', '荤', leftX, y, smallW, smallH, canAct ? TYPE_COLORS['荤'] : disabledFill, canAct ? '#111' : disabledColor, 18)
+  addButton(canAct ? 'draw_veg' : 'noop', '素', leftX + smallW + smallGap, y, smallW, smallH, canAct ? TYPE_COLORS['素'] : disabledFill, canAct ? '#111' : disabledColor, 18)
+  addButton(canAct ? 'draw_staple' : 'noop', '主食', leftX, y + smallH + smallGap, smallW, smallH, canAct ? TYPE_COLORS['主食'] : disabledFill, canAct ? '#111' : disabledColor, 18)
+  addButton(canAct ? 'draw_dessert' : 'noop', '甜点', leftX + smallW + smallGap, y + smallH + smallGap, smallW, smallH, canAct ? TYPE_COLORS['甜点'] : disabledFill, canAct ? '#111' : disabledColor, 18)
+
+  let standText = '开吃'
   let standSub = ''
-
   if (game.phase === 'opening') {
-    standText = t('opening')
-    standSub = t('draw2')
+    standText = '起手中'
+    standSub = '双方可同时抽'
   } else if (game.phase === 'night_picking') {
-    standText = t('night')
-    standSub = t('pickAll')
+    standText = '夜宵'
+    standSub = '选完后展示'
   } else if (game.phase === 'meal_playing') {
     if (game.turn === selfId) {
-      standText = t('eat')
-      standSub = (game.players[selfId].busted || isBusted(game, selfId)) ? t('busted') : t('yourTurn')
+      standText = '开吃'
+      standSub = (game.players[selfId].busted || isBusted(game, selfId)) ? '结束并摊牌' : '确认热量'
     } else {
-      standText = t('wait')
-      standSub = t('rivalOrdering')
+      standText = '等待对方'
+      standSub = '对方点餐回合'
     }
   }
 
-  addButton(game.phase === 'meal_playing' && game.turn === selfId ? 'stand' : 'noop', standText, leftX + leftW + gap, y, rightW, 72, '#FFE169', '#111', lang === 'en' ? 18 : 24)
-
+  addButton(game.phase === 'meal_playing' && game.turn === selfId ? 'stand' : 'noop', standText, leftX + leftW + gap, y, rightW, 72, '#FFE169', '#111', 24)
   if (standSub) drawText(standSub, leftX + leftW + gap + rightW / 2, y + 50, 10, '#5C4300', 'center', 'bold')
 }
 
 
-
 function drawGameScreen() {
   drawTopBadge()
+  drawHomeMiniButton()
+  drawMusicButton()
 
-  const isOnline = appMode === 'online'
-  // 顶部按钮安全距离：让三个大框整体下移，避免和 Music / 中英文 / Home 按钮重叠。
-  const TOP_SAFE_OFFSET = 34
-  const topY = SAFE_TOP + (isOnline ? 34 : 4) + TOP_SAFE_OFFSET
+  const topY = SAFE_TOP + (appMode === 'online' ? 32 : 0)
   const actionY = H - SAFE_BOTTOM - 94
-  const gap = H < 700 ? 5 : 8
-  const centerH = H < 680 ? 66 : H < 760 ? 74 : 86
-
-  const available = Math.max(300, actionY - topY - centerH - gap * 2 - 8)
-  let zoneH = Math.floor(available / 2)
-
-  // 全机型自适应：小屏时宁可压缩卡牌区，也不要压扁底部按钮。
-  const minZone = H < 680 ? 116 : H < 760 ? 132 : 150
-  const maxZone = H > 850 ? 248 : 220
-  zoneH = Math.max(minZone, Math.min(maxZone, zoneH))
+  const centerH = 86
+  const gap = 8
+  let zoneH = Math.floor((actionY - topY - centerH - gap * 2 - 8) / 2)
+  zoneH = Math.max(184, Math.min(245, zoneH))
 
   const ids = getDisplayPlayerIds()
   const opponentY = topY
   const centerY = opponentY + zoneH + gap
   const selfY = centerY + centerH + gap
 
-  drawPlayerPanel(ids.opponent, t('opponent'), 16, opponentY, W - 32, zoneH, true)
+  drawPlayerPanel(ids.opponent, '对手', 16, opponentY, W - 32, zoneH, true)
   drawCenterPanel(16, centerY, W - 32, centerH)
-  drawPlayerPanel(ids.self, t('you'), 16, selfY, W - 32, zoneH, false)
+  drawPlayerPanel(ids.self, '你', 16, selfY, W - 32, zoneH, false)
 
   drawActionButtons()
   drawWaitingOpponentFloat()
@@ -2831,8 +2365,6 @@ function applyRevealNight(g) {
 }
 
 
-
-
 function drawWaitingOpponentFloat() {
   if (appMode !== 'online') return
   if (game.phase !== 'meal_playing') return
@@ -2844,9 +2376,9 @@ function drawWaitingOpponentFloat() {
   if (game.players[selfId] && game.players[selfId].stood) return
 
   const boxW = Math.min(W - 96, 250)
-  const boxH = H < 720 ? 58 : 66
+  const boxH = 66
   const x = (W - boxW) / 2
-  const y = Math.max(SAFE_TOP + 90, Math.min(H * 0.26, SAFE_TOP + 150))
+  const y = SAFE_TOP + (appMode === 'online' ? 142 : 118)
 
   ctx.save()
   ctx.globalAlpha = 0.97
@@ -2854,8 +2386,8 @@ function drawWaitingOpponentFloat() {
   drawRoundRect(x, y, boxW, boxH, 22, '#FFF6E8', '#111', 3)
   ctx.restore()
 
-  drawText(t('rivalOrdering'), W / 2, y + 10, H < 720 ? 18 : 21, '#111', 'center', 'bold')
-  drawText(t('waitRival'), W / 2, y + (H < 720 ? 38 : 44), 11, '#555', 'center', 'bold')
+  drawText('对方点餐中', W / 2, y + 12, 23, '#111', 'center', 'bold')
+  drawText('请等待对方点外卖或开吃', W / 2, y + 44, 11, '#555', 'center', 'bold')
 }
 
 
@@ -2865,7 +2397,9 @@ function drawMealResult() {
 
   if (!result) {
     drawText('本餐结算', 24, SAFE_TOP + 10, 28, '#111', 'left', 'bold')
-        addButton('next', '继续', 24, H - SAFE_BOTTOM - 72, W - 48, 58, '#111', '#fff', 22)
+    drawHomeMiniButton()
+    drawMusicButton()
+    addButton('next', '继续', 24, H - SAFE_BOTTOM - 72, W - 48, 58, '#111', '#fff', 22)
     return
   }
 
@@ -2893,6 +2427,8 @@ function drawMealResult() {
   const selfBusted = selfId === 'p1' ? result.p1Busted : result.p2Busted
   const oppBusted = oppId === 'p1' ? result.p1Busted : result.p2Busted
 
+  drawHomeMiniButton()
+  drawMusicButton()
 
   const panelW = W - 48
   const panelH = Math.min(520, H - SAFE_TOP - SAFE_BOTTOM - 112)
@@ -2952,14 +2488,14 @@ function drawResultPlayer(title, pid, y, h) {
 
 
 
-
 function drawDayResult() {
+  drawHomeMiniButton()
+  drawMusicButton()
+
   const selfId = getSelfId()
   const oppId = otherPlayer(selfId)
   const selfPoint = getFinalPoint(game, selfId)
   const oppPoint = getFinalPoint(game, oppId)
-  const selfKcal = getDayTotalKcal(game, selfId)
-  const oppKcal = getDayTotalKcal(game, oppId)
 
   let finalText = '平局'
   let finalSubText = '双方今天吃得不相上下'
@@ -2972,22 +2508,16 @@ function drawDayResult() {
     finalSubText = '对方赢得了这一整局'
   }
 
-  const selfWin = selfPoint > oppPoint
-  const oppWin = oppPoint > selfPoint
-  const selfColor = selfWin ? '#E94335' : selfPoint === oppPoint ? '#E94335' : '#888'
-  const oppColor = oppWin ? '#E94335' : selfPoint === oppPoint ? '#E94335' : '#888'
+  drawText('今日结算', 24, SAFE_TOP + 8, 30, '#111', 'left', 'bold')
 
-  drawRoundRect(20, SAFE_TOP + 42, W - 40, 126, 22, '#FFFFFF', '#111', 3)
-  drawText(finalText, W / 2, SAFE_TOP + 56, 27, selfWin ? '#E94335' : '#111', 'center', 'bold')
-  drawText(finalSubText, W / 2, SAFE_TOP + 90, 13, '#555', 'center', 'bold')
-
-  // v3.6：最终几比几两边显示双方最终卡路里。
-  drawText(`${selfKcal} kcal`, W * 0.24, SAFE_TOP + 120, 18, selfColor, 'center', 'bold')
-  drawText(`你 ${selfPoint} : ${oppPoint} 对手`, W / 2, SAFE_TOP + 116, 22, '#111', 'center', 'bold')
-  drawText(`${oppKcal} kcal`, W * 0.76, SAFE_TOP + 120, 18, oppColor, 'center', 'bold')
+  drawRoundRect(20, SAFE_TOP + 48, W - 40, 108, 22, '#FFFFFF', '#111', 3)
+  drawText(finalText, W / 2, SAFE_TOP + 62, 28, selfPoint > oppPoint ? '#E94335' : '#111', 'center', 'bold')
+  drawText(finalSubText, W / 2, SAFE_TOP + 96, 13, '#555', 'center', 'bold')
+  drawText(`你 ${selfPoint} : ${oppPoint} 对手`, W / 2, SAFE_TOP + 118, 22, '#111', 'center', 'bold')
+  drawText(`全日热量：你 ${getDayTotalKcal(game, selfId)} kcal｜对手 ${getDayTotalKcal(game, oppId)} kcal`, W / 2, SAFE_TOP + 142, 11, '#555', 'center', 'bold')
 
   const results = safeArray(game.mealResults)
-  let y = SAFE_TOP + 184
+  let y = SAFE_TOP + 170
   const bottomLimit = H - SAFE_BOTTOM - 104
   const blockH = Math.max(82, Math.min(112, (bottomLimit - y - 18) / meals.length))
 
@@ -3064,17 +2594,6 @@ function drawOverlayIfNeeded() {
 }
 
 
-
-function drawTopControls() {
-  // 最后绘制，确保永远在最上层，也保证点击区域最后加入 buttons。
-  drawMusicButton()
-  drawHomeMiniButton()
-}
-
-
-
-
-
 function render() {
   buttons = []
   ctx.clearRect(0, 0, W, H)
@@ -3084,27 +2603,23 @@ function render() {
   if (appMode === 'home') {
     drawHome()
     drawOverlayIfNeeded()
-    drawTopControls()
     return
   }
 
   if (game.phase === 'meal_result') {
     drawMealResult()
     drawOverlayIfNeeded()
-    drawTopControls()
     return
   }
 
   if (game.phase === 'day_result') {
     drawDayResult()
     drawOverlayIfNeeded()
-    drawTopControls()
     return
   }
 
   drawGameScreen()
   drawOverlayIfNeeded()
-  drawTopControls()
 }
 
 // =========================
@@ -3130,12 +2645,6 @@ async function handleAction(id) {
   pendingActionId = id
 
   try {
-    if (id === 'tarot') {
-      tarotCard = FOOD_CARDS[Math.floor(Math.random() * FOOD_CARDS.length)]
-      requestRender()
-      return
-    }
-
     if (id === 'rules_toggle') {
       rulesExpanded = !rulesExpanded
       if (!rulesExpanded) rulesScroll = 0
@@ -3148,11 +2657,8 @@ async function handleAction(id) {
       return
     }
 
-    if (id === 'lang_toggle') {
-      lang = lang === 'zh' ? 'en' : 'zh'
-      localStorage.setItem('lilucard_lang', lang)
-      rulesScroll = 0
-      requestRender()
+    if (id === 'tarot_slot') {
+      handleTarotSlotTap()
       return
     }
 
@@ -3236,17 +2742,11 @@ async function handleAction(id) {
 }
 
 
-
-
 function onPointer(clientX, clientY) {
   const id = hitButton(clientX, clientY)
   if (!id || id === 'noop') return
 
-  if (id === 'music_toggle') {
-    startBgm()
-  }
-
-  retryFailedImages()
+  startBgm()
 
   buttonPulse[id] = Date.now()
   requestRender()
@@ -3257,7 +2757,6 @@ function onPointer(clientX, clientY) {
 
 canvas.addEventListener('touchstart', event => {
   event.preventDefault()
-
   const touch = event.touches && event.touches[0]
   if (!touch) return
 
@@ -3304,29 +2803,5 @@ canvas.addEventListener('mousedown', event => {
   onPointer(event.clientX, event.clientY)
 })
 
-let resizeTimer = null
-
-function scheduleResize(force) {
-  if (resizeTimer) clearTimeout(resizeTimer)
-
-  resizeTimer = setTimeout(() => {
-    resizeTimer = null
-    resizeCanvas(Boolean(force))
-  }, force ? 80 : 140)
-}
-
-window.addEventListener('resize', () => scheduleResize(false))
-
-if (window.visualViewport) {
-  window.visualViewport.addEventListener('resize', () => scheduleResize(false))
-  window.visualViewport.addEventListener('scroll', () => scheduleResize(false))
-}
-
-window.addEventListener('orientationchange', () => {
-  scheduleResize(true)
-  setTimeout(() => resizeCanvas(true), 360)
-})
-
-initBgm()
 preloadGameImages()
 render()
