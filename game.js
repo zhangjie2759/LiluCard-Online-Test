@@ -2051,14 +2051,6 @@ function getCardBookCloseText() {
 
 function drawBookCard(card, x, y, w, h) {
   drawCard({ ...card, hidden: false }, x, y, w, h)
-
-  const name = lang === 'en' ? card.english : card.name
-  const textY = y + h + 4
-  const label = `${name}`
-  const kcal = `${card.kcal} ${t('kcal')}`
-
-  drawText(label, x + w / 2, textY, 8, '#111', 'center', 'bold')
-  drawText(kcal, x + w / 2, textY + 11, 8, '#E94335', 'center', 'bold')
 }
 
 function drawCardBook() {
