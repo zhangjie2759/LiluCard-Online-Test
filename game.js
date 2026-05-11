@@ -1,5 +1,5 @@
 // game.js
-// 利禄卡 Online v4.9 顶部安全区UI优化版
+// 利禄卡 Online v5.0 卡牌图鉴版
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -169,6 +169,9 @@ let unsubscribeRoom = null
 let buttons = []
 let message = ''
 let rulesExpanded = false
+
+let cardBookOpen = false
+let titlePulseStart = 0
 
 // =========================
 // 中英文切换
@@ -2032,6 +2035,88 @@ function leaveToHome() {
   render()
 }
 
+
+
+// =========================
+// 卡牌图鉴
+// =========================
+
+function getCardBookTitle() {
+  return lang === 'en' ? 'Card Book' : '利禄卡图鉴'
+}
+
+function getCardBookCloseText() {
+  return lang === 'en' ? 'Tap outside to close' : '点击空白关闭'
+}
+
+function drawBookCard(card, x, y, w, h) {
+  drawCard({ ...card, hidden: false }, x, y, w, h)
+
+  const name = lang === 'en' ? card.english : card.name
+  const textY = y + h + 4
+  const label = `${name}`
+  const kcal = `${card.kcal} ${t('kcal')}`
+
+  drawText(label, x + w / 2, textY, 8, '#111', 'center', 'bold')
+  drawText(kcal, x + w / 2, textY + 11, 8, '#E94335', 'center', 'bold')
+}
+
+function drawCardBook() {
+  if (!cardBookOpen) return
+
+  buttons.push({ id: 'card_book_close', x: 0, y: 0, w: W, h: H })
+
+  ctx.save()
+  ctx.globalAlpha = 0.68
+  ctx.fillStyle = '#000'
+  ctx.fillRect(0, 0, W, H)
+  ctx.restore()
+
+  const panelX = 16
+  const panelY = SAFE_TOP + 42
+  const panelW = W - 32
+  const panelH = H - panelY - SAFE_BOTTOM - 18
+
+  drawRoundRect(panelX, panelY, panelW, panelH, 24, '#FFF9EE', '#111', 4)
+  drawText(getCardBookTitle(), W / 2, panelY + 18, lang === 'en' ? 26 : 28, '#111', 'center', 'bold')
+  drawText(getCardBookCloseText(), W / 2, panelY + 52, 11, '#777', 'center', 'bold')
+
+  const categories = ['荤', '素', '主食', '甜点']
+  const typeNames = {
+    '荤': t('meat'),
+    '素': t('veg'),
+    '主食': t('staple'),
+    '甜点': t('dessert')
+  }
+
+  const cardW = Math.min(42, Math.max(35, Math.floor((panelW - 58) / 6)))
+  const cardH = Math.round(cardW * 1121 / 671)
+  const gapX = Math.max(5, Math.floor((panelW - 32 - cardW * 6) / 5))
+  const rowH = cardH + 28
+
+  let y = panelY + 78
+
+  categories.forEach(type => {
+    const cards = FOOD_CARDS
+      .filter(card => card.type === type)
+      .slice()
+      .sort((a, b) => a.kcal - b.kcal)
+
+    drawRoundRect(panelX + 12, y, panelW - 24, rowH + 26, 16, '#FFFFFF', '#111', 2)
+    drawText(typeNames[type], panelX + 24, y + 10, 15, '#111', 'left', 'bold')
+
+    let x = panelX + 24
+    const cardY = y + 32
+
+    cards.forEach(card => {
+      drawBookCard(card, x, cardY, cardW, cardH)
+      x += cardW + gapX
+    })
+
+    y += rowH + 34
+  })
+}
+
 // =========================
 // 渲染节流与图片预加载
 // =========================
@@ -2461,6 +2546,7 @@ function drawCards(cards, x, y, areaW, areaH) {
 
 
 
+
 function drawHome() {
   const panelX = 24
   const panelY = SAFE_TOP + 26
@@ -2473,7 +2559,30 @@ function drawHome() {
   drawRoundRect(panelX, panelY, panelW, panelH, 28, '#FFFFFF', '#111', 4)
 
   if (!rulesExpanded) {
-    drawText(t('title'), W / 2, panelY + 28, lang === 'en' ? 43 : 48, '#111', 'center', 'bold')
+    const now = Date.now()
+    const elapsed = now - titlePulseStart
+    let titleScale = 1
+
+    if (elapsed >= 0 && elapsed < 220) {
+      const t0 = elapsed / 220
+      titleScale = 1 + 0.075 * Math.sin(Math.PI * t0)
+    }
+
+    // 只登记点击区域，不额外画按钮；点击标题打开卡牌图鉴。
+    buttons.push({
+      id: 'card_book_toggle',
+      x: W / 2 - 118,
+      y: panelY + 12,
+      w: 236,
+      h: 72
+    })
+
+    ctx.save()
+    ctx.translate(W / 2, panelY + 52)
+    ctx.scale(titleScale, titleScale)
+    drawText(t('title'), 0, -24, lang === 'en' ? 43 : 48, '#111', 'center', 'bold')
+    ctx.restore()
+
     drawText('LILU CARDS', W / 2, panelY + 90, 16, '#555', 'center', 'bold')
 
     drawRoundRect(W / 2 - 104, panelY + 126, 208, 40, 18, '#111', null, 0)
@@ -2534,6 +2643,8 @@ function drawHome() {
 
   if (message) wrapText(message, 32, H - SAFE_BOTTOM - 24, W - 64, 14, 11, '#E94335', 'bold', 1)
 }
+
+
 
 
 
@@ -3043,6 +3154,7 @@ function drawTopControls() {
 
 
 
+
 function render() {
   buttons = []
   ctx.clearRect(0, 0, W, H)
@@ -3053,6 +3165,7 @@ function render() {
     drawHome()
     drawOverlayIfNeeded()
     drawTopControls()
+    drawCardBook()
     return
   }
 
@@ -3060,6 +3173,7 @@ function render() {
     drawMealResult()
     drawOverlayIfNeeded()
     drawTopControls()
+    drawCardBook()
     return
   }
 
@@ -3067,13 +3181,17 @@ function render() {
     drawDayResult()
     drawOverlayIfNeeded()
     drawTopControls()
+    drawCardBook()
     return
   }
 
   drawGameScreen()
   drawOverlayIfNeeded()
   drawTopControls()
+  drawCardBook()
 }
+
+
 
 // =========================
 // 点击事件
@@ -3098,6 +3216,19 @@ async function handleAction(id) {
   pendingActionId = id
 
   try {
+    if (id === 'card_book_toggle') {
+      cardBookOpen = true
+      titlePulseStart = Date.now()
+      requestRender()
+      return
+    }
+
+    if (id === 'card_book_close') {
+      cardBookOpen = false
+      requestRender()
+      return
+    }
+
     if (id === 'rules_toggle') {
       rulesExpanded = !rulesExpanded
       if (!rulesExpanded) rulesScroll = 0
