@@ -2142,6 +2142,11 @@ function drawTinyCards(cards, x, y, areaW, areaH, maxSize) {
 function drawCompactMealCards(title, cards, total, busted, x, y, w, h) {
   drawRoundRect(x, y, w, h, 16, '#FFFFFF', '#111', 2.2)
   drawText(title, x + 12, y + 10, 15, '#111', 'left', 'bold')
+  drawText(`${total} ${t('kcal')}${busted ? (lang === 'en' ? ' Bust' : ' 爆') : ''}`, x + w - 12, y + 11, 13, busted ? '#E94335' : '#111', 'right', 'bold')
+  drawTinyCards(cards, x + 12, y + 34, w - 24, h - 42, 34)
+}
+  drawRoundRect(x, y, w, h, 16, '#FFFFFF', '#111', 2.2)
+  drawText(title, x + 12, y + 10, 15, '#111', 'left', 'bold')
   drawText(`${total} kcal${busted ? ' 爆' : ''}`, x + w - 12, y + 11, 13, busted ? '#E94335' : '#111', 'right', 'bold')
   drawTinyCards(cards, x + 12, y + 34, w - 24, h - 42, 34)
 }
@@ -2770,6 +2775,87 @@ function drawMealResult() {
   const result = game.lastMealResult
 
   if (!result) {
+    drawText(t('result'), 24, SAFE_TOP + 10, 28, '#111', 'left', 'bold')
+    addButton('next', lang === 'en' ? 'Continue' : '继续', 24, H - SAFE_BOTTOM - 72, W - 48, 58, '#111', '#fff', 22)
+    return
+  }
+
+  const selfId = getSelfId()
+  const oppId = otherPlayer(selfId)
+
+  let verdict = t('mealDraw')
+  let quote = t('quoteDraw')
+
+  if (result.winner === selfId) {
+    verdict = t('youWonMeal')
+    quote = t('quoteWin')
+  } else if (result.winner === oppId) {
+    verdict = t('youLostMeal')
+    quote = t('quoteLose')
+  }
+
+  const selfScore = getMealTotalPoint(game, selfId)
+  const oppScore = getMealTotalPoint(game, oppId)
+
+  const selfCards = getMealCardsFromResult(result, selfId)
+  const oppCards = getMealCardsFromResult(result, oppId)
+  const selfTotal = selfId === 'p1' ? result.p1Total : result.p2Total
+  const oppTotal = oppId === 'p1' ? result.p1Total : result.p2Total
+  const selfBusted = selfId === 'p1' ? result.p1Busted : result.p2Busted
+  const oppBusted = oppId === 'p1' ? result.p1Busted : result.p2Busted
+
+  const panelW = W - 48
+  const panelH = Math.min(520, H - SAFE_TOP - SAFE_BOTTOM - 112)
+  const x = 24
+  const y = SAFE_TOP + 48
+
+  drawRoundRect(x, y, panelW, panelH, 28, '#FFFFFF', '#111', 4)
+
+  drawText(`${mealName(result.mealIndex)} ${t('result')}`, W / 2, y + 24, 24, '#111', 'center', 'bold')
+  drawText(verdict, W / 2, y + 62, lang === 'en' ? 28 : 34, result.winner === selfId ? '#E94335' : '#111', 'center', 'bold')
+  drawText(quote, W / 2, y + 108, lang === 'en' ? 14 : 16, '#555', 'center', 'bold')
+
+  drawRoundRect(W / 2 - 96, y + 138, 192, 44, 22, '#FFF6E8', '#111', 3)
+  drawText(`${t('you')} ${selfScore} : ${oppScore} ${t('opponent')}`, W / 2, y + 150, lang === 'en' ? 17 : 22, '#111', 'center', 'bold')
+
+  const cardAreaY = y + 202
+  const cardPanelH = Math.max(108, Math.min(150, (panelH - 260) / 2))
+
+  drawCompactMealCards(t('rivalOrders'), oppCards, oppTotal, oppBusted, x + 16, cardAreaY, panelW - 32, cardPanelH)
+  drawCompactMealCards(t('yourOrders'), selfCards, selfTotal, selfBusted, x + 16, cardAreaY + cardPanelH + 10, panelW - 32, cardPanelH)
+
+  if (appMode === 'online') {
+    const nextReady = game.nextReady || { p1: false, p2: false }
+    const statusText = lang === 'en'
+      ? `Confirm: ${t('you')} ${nextReady[selfId] ? t('ready') : t('notReady')}｜${t('opponent')} ${nextReady[oppId] ? t('ready') : t('notReady')}`
+      : `确认状态：${t('you')} ${nextReady[selfId] ? '已确认' : '未确认'}｜${t('opponent')} ${nextReady[oppId] ? '已确认' : '未确认'}`
+
+    drawText(statusText, W / 2, y + panelH - 30, 12, '#E94335', 'center', 'bold')
+  }
+
+  const nextReady = game.nextReady || { p1: false, p2: false }
+  const nextName = game.mealIndex >= 3 ? t('finalResult') : mealName(game.mealIndex + 1)
+
+  if (appMode === 'online') {
+    const alreadyReady = Boolean(nextReady[selfId])
+    addButton(
+      alreadyReady ? 'noop' : 'next',
+      alreadyReady ? t('confirmedWait') : `${t('confirmGo')}${nextName}`,
+      24,
+      H - SAFE_BOTTOM - 72,
+      W - 48,
+      58,
+      '#111',
+      '#fff',
+      lang === 'en' ? 17 : 19
+    )
+  } else {
+    addButton('next', `${t('confirmGo')}${nextName}`, 24, H - SAFE_BOTTOM - 72, W - 48, 58, '#111', '#fff', lang === 'en' ? 18 : 22)
+  }
+}
+  const result = game.lastMealResult
+
+  if (!result) {
     drawText('本餐结算', 24, SAFE_TOP + 10, 28, '#111', 'left', 'bold')
         addButton('next', '继续', 24, H - SAFE_BOTTOM - 72, W - 48, 58, '#111', '#fff', 22)
     return
@@ -2860,6 +2946,92 @@ function drawResultPlayer(title, pid, y, h) {
 
 
 function drawDayResult() {
+  const selfId = getSelfId()
+  const oppId = otherPlayer(selfId)
+  const selfPoint = getFinalPoint(game, selfId)
+  const oppPoint = getFinalPoint(game, oppId)
+  const selfKcal = getDayTotalKcal(game, selfId)
+  const oppKcal = getDayTotalKcal(game, oppId)
+
+  let finalText = t('finalDraw')
+  let finalSubText = t('finalDrawSub')
+
+  if (selfPoint > oppPoint) {
+    finalText = t('finalWin')
+    finalSubText = t('finalWinSub')
+  } else if (selfPoint < oppPoint) {
+    finalText = t('finalLose')
+    finalSubText = t('finalLoseSub')
+  }
+
+  const selfWin = selfPoint > oppPoint
+  const oppWin = oppPoint > selfPoint
+  const selfColor = selfWin ? '#E94335' : selfPoint === oppPoint ? '#E94335' : '#888'
+  const oppColor = oppWin ? '#E94335' : selfPoint === oppPoint ? '#E94335' : '#888'
+
+  drawRoundRect(20, SAFE_TOP + 42, W - 40, 126, 22, '#FFFFFF', '#111', 3)
+  drawText(finalText, W / 2, SAFE_TOP + 56, lang === 'en' ? 26 : 27, selfWin ? '#E94335' : '#111', 'center', 'bold')
+  drawText(finalSubText, W / 2, SAFE_TOP + 90, 13, '#555', 'center', 'bold')
+
+  drawText(`${selfKcal} ${t('kcal')}`, W * 0.24, SAFE_TOP + 120, 18, selfColor, 'center', 'bold')
+  drawText(`${t('you')} ${selfPoint} : ${oppPoint} ${t('opponent')}`, W / 2, SAFE_TOP + 116, lang === 'en' ? 17 : 22, '#111', 'center', 'bold')
+  drawText(`${oppKcal} ${t('kcal')}`, W * 0.76, SAFE_TOP + 120, 18, oppColor, 'center', 'bold')
+
+  const results = safeArray(game.mealResults)
+  let y = SAFE_TOP + 184
+  const bottomLimit = H - SAFE_BOTTOM - 104
+  const blockH = Math.max(82, Math.min(112, (bottomLimit - y - 18) / meals.length))
+
+  for (let i = 0; i < meals.length; i++) {
+    const res = results[i]
+
+    drawRoundRect(20, y, W - 40, blockH, 16, '#FFFFFF', '#111', 2)
+    drawText(mealName(i), 34, y + 10, 16, '#111', 'left', 'bold')
+
+    if (!res) {
+      drawText(t('noRecord'), W / 2, y + 12, 13, '#777', 'center', 'bold')
+      y += blockH + 8
+      continue
+    }
+
+    const selfCards = getMealCardsFromResult(res, selfId)
+    const oppCards = getMealCardsFromResult(res, oppId)
+    const selfRaw = selfId === 'p1' ? res.p1Total : res.p2Total
+    const oppRaw = oppId === 'p1' ? res.p1Total : res.p2Total
+    const selfBusted = selfId === 'p1' ? res.p1Busted : res.p2Busted
+    const oppBusted = oppId === 'p1' ? res.p1Busted : res.p2Busted
+    const selfP = getMealPoint(game, selfId, i)
+    const oppP = getMealPoint(game, oppId, i)
+
+    drawText(`${selfP}:${oppP}`, W - 34, y + 10, 16, '#E94335', 'right', 'bold')
+
+    const bustSelfText = selfBusted ? (lang === 'en' ? ' Bust' : '爆') : ''
+    const bustOppText = oppBusted ? (lang === 'en' ? ' Bust' : '爆') : ''
+
+    drawText(`${t('you')} ${selfRaw}${bustSelfText}｜${t('opponent')} ${oppRaw}${bustOppText}`, 92, y + 12, 11, '#333', 'left', 'bold')
+
+    const cardY = y + 34
+    const colW = (W - 76) / 2
+
+    drawText(t('opponent'), 34, cardY, 10, '#777', 'left', 'bold')
+    drawTinyCards(oppCards, 34, cardY + 14, colW, blockH - 50, 26)
+
+    drawText(t('you'), 42 + colW, cardY, 10, '#777', 'left', 'bold')
+    drawTinyCards(selfCards, 42 + colW, cardY + 14, colW, blockH - 50, 26)
+
+    y += blockH + 8
+  }
+
+  if (appMode === 'online') {
+    const ready = game.replayReady || { p1: false, p2: false }
+    const statusText = `${t('nextRound')}：${t('you')} ${ready[selfId] ? t('ready') : t('notReady')}｜${t('opponent')} ${ready[oppId] ? t('ready') : t('notReady')}`
+
+    drawText(statusText, W / 2, H - SAFE_BOTTOM - 92, 13, '#E94335', 'center', 'bold')
+    addButton(ready[selfId] ? 'noop' : 'replay_ready', ready[selfId] ? t('confirmedWait') : t('nextRound'), 24, H - SAFE_BOTTOM - 72, W - 48, 58, '#111', '#fff', 22)
+  } else {
+    addButton('restart_home', t('restartHome'), 24, H - SAFE_BOTTOM - 72, W - 48, 58, '#111', '#fff', 22)
+  }
+}
   const selfId = getSelfId()
   const oppId = otherPlayer(selfId)
   const selfPoint = getFinalPoint(game, selfId)
