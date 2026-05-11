@@ -1,5 +1,5 @@
 // game.js
-// 利禄卡 Online v4.9 顶部安全区UI优化版
+// 利禄卡 Online v6.1 美食塔罗稳定版
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -169,6 +169,7 @@ let unsubscribeRoom = null
 let buttons = []
 let message = ''
 let rulesExpanded = false
+let tarotCard = null
 
 // =========================
 // 中英文切换
@@ -2461,7 +2462,7 @@ function drawCards(cards, x, y, areaW, areaH) {
 
 
 
-function drawHome(); drawTarot() {
+function drawHome() {
   const panelX = 24
   const panelY = SAFE_TOP + 26
   const panelW = W - 48
@@ -2481,6 +2482,37 @@ function drawHome(); drawTarot() {
 
     drawText(t('slogan'), W / 2, panelY + 212, lang === 'en' ? 23 : 28, '#111', 'center', 'bold')
     drawText(t('modes'), W / 2, panelY + 254, 15, '#555', 'center', 'bold')
+
+    // ===== 美食塔罗：只在首页内部绘制，不外挂 render，避免白屏 =====
+    const tarotY = panelY + 286
+    const tarotBtnW = Math.min(190, panelW - 80)
+
+    addButton('tarot', lang === 'en' ? 'Food Tarot' : '今日美食塔罗', W / 2 - tarotBtnW / 2, tarotY, tarotBtnW, 38, '#111', '#fff', lang === 'en' ? 14 : 15)
+
+    if (tarotCard) {
+      const tarotCardW = H < 720 ? 52 : 58
+      const tarotCardH = Math.round(tarotCardW * 1121 / 671)
+      const cardY = tarotY + 48
+
+      drawCard({ ...tarotCard, hidden: false }, W / 2 - tarotCardW / 2, cardY, tarotCardW, tarotCardH)
+
+      const foodName = lang === 'en' ? (tarotCard.english || tarotCard.name) : tarotCard.name
+      const line = lang === 'en'
+        ? `Today, try ${foodName}`
+        : `今天建议吃 ${foodName}`
+
+      drawText(line, W / 2, cardY + tarotCardH + 8, 13, '#111', 'center', 'bold')
+    } else {
+      drawText(
+        lang === 'en' ? 'Tap for today’s food hint' : '点击抽取今日美食灵感',
+        W / 2,
+        tarotY + 47,
+        12,
+        '#666',
+        'center',
+        'bold'
+      )
+    }
 
     const ruleBtnW = Math.min(panelW - 64, 220)
     addButton('rules_toggle', t('howToPlay'), W / 2 - ruleBtnW / 2, panelY + panelH - 64, ruleBtnW, 42, '#FFFFFF', '#111', 16)
@@ -3050,7 +3082,7 @@ function render() {
   ctx.fillRect(0, 0, W, H)
 
   if (appMode === 'home') {
-    drawHome(); drawTarot()
+    drawHome()
     drawOverlayIfNeeded()
     drawTopControls()
     return
@@ -3098,7 +3130,11 @@ async function handleAction(id) {
   pendingActionId = id
 
   try {
-    if (id === 'tarot') { handleTarot(); return }
+    if (id === 'tarot') {
+      tarotCard = FOOD_CARDS[Math.floor(Math.random() * FOOD_CARDS.length)]
+      requestRender()
+      return
+    }
 
     if (id === 'rules_toggle') {
       rulesExpanded = !rulesExpanded
@@ -3294,26 +3330,3 @@ window.addEventListener('orientationchange', () => {
 initBgm()
 preloadGameImages()
 render()
-
-
-// ===== 美食塔罗（轻量版） =====
-let tarotCard = null
-
-function drawTarot() {
-  const x = W/2 - 80
-  const y = SAFE_TOP + 220
-
-  drawRoundRect(x, y, 160, 40, 12, '#111', null, 0)
-  drawText('今日美食塔罗', W/2, y + 10, 14, '#fff', 'center', 'bold')
-
-  if (tarotCard) {
-    drawCard(tarotCard, W/2 - 40, y + 60, 80, 120)
-    drawText('今天建议吃 ' + tarotCard.name, W/2, y + 190, 14, '#111', 'center', 'bold')
-  }
-
-  buttons.push({id:'tarot', x:x, y:y, w:160, h:40})
-}
-
-function handleTarot() {
-  tarotCard = FOOD_CARDS[Math.floor(Math.random()*FOOD_CARDS.length)]
-}
