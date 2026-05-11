@@ -1,5 +1,5 @@
 // game.js
-// 利禄卡 Online v4.8 稳定回退+新版规则
+// 利禄卡 Online v4.9 顶部安全区UI优化版
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -2760,7 +2760,9 @@ function drawGameScreen() {
   drawTopBadge()
 
   const isOnline = appMode === 'online'
-  const topY = SAFE_TOP + (isOnline ? 34 : 4)
+  // 顶部按钮安全距离：让三个大框整体下移，避免和 Music / 中英文 / Home 按钮重叠。
+  const TOP_SAFE_OFFSET = 34
+  const topY = SAFE_TOP + (isOnline ? 34 : 4) + TOP_SAFE_OFFSET
   const actionY = H - SAFE_BOTTOM - 94
   const gap = H < 700 ? 5 : 8
   const centerH = H < 680 ? 66 : H < 760 ? 74 : 86
