@@ -2873,6 +2873,7 @@ function drawResultPlayer(title, pid, y, h) {
 
 
 
+
 function drawDayResult() {
   const selfId = getSelfId()
   const oppId = otherPlayer(selfId)
@@ -2897,27 +2898,31 @@ function drawDayResult() {
   const selfColor = selfWin ? '#E94335' : selfPoint === oppPoint ? '#E94335' : '#888'
   const oppColor = oppWin ? '#E94335' : selfPoint === oppPoint ? '#E94335' : '#888'
 
-  drawRoundRect(20, SAFE_TOP + 42, W - 40, 126, 22, '#FFFFFF', '#111', 3)
-  drawText(finalText, W / 2, SAFE_TOP + 56, lang === 'en' ? 26 : 27, selfWin ? '#E94335' : '#111', 'center', 'bold')
-  drawText(finalSubText, W / 2, SAFE_TOP + 90, 13, '#555', 'center', 'bold')
+  const topY = SAFE_TOP + 42
+  const topH = lang === 'en' ? 140 : 126
 
-  drawText(`${selfKcal} ${t('kcal')}`, W * 0.24, SAFE_TOP + 120, 18, selfColor, 'center', 'bold')
-  drawText(`${t('you')} ${selfPoint} : ${oppPoint} ${t('opponent')}`, W / 2, SAFE_TOP + 116, lang === 'en' ? 17 : 22, '#111', 'center', 'bold')
-  drawText(`${oppKcal} ${t('kcal')}`, W * 0.76, SAFE_TOP + 120, 18, oppColor, 'center', 'bold')
+  drawRoundRect(20, topY, W - 40, topH, 22, '#FFFFFF', '#111', 3)
+  drawText(finalText, W / 2, topY + 22, lang === 'en' ? 30 : 27, selfWin ? '#E94335' : '#111', 'center', 'bold')
+  drawText(finalSubText, W / 2, topY + 60, 13, '#555', 'center', 'bold')
+
+  drawText(`${t('you')} ${selfPoint} : ${oppPoint} ${t('opponent')}`, W / 2, topY + 88, lang === 'en' ? 20 : 22, '#111', 'center', 'bold')
+  drawText(`${selfKcal} ${t('kcal')}`, W * 0.28, topY + 114, 16, selfColor, 'center', 'bold')
+  drawText(`${oppKcal} ${t('kcal')}`, W * 0.72, topY + 114, 16, oppColor, 'center', 'bold')
 
   const results = safeArray(game.mealResults)
-  let y = SAFE_TOP + 184
+  let y = topY + topH + 20
   const bottomLimit = H - SAFE_BOTTOM - 104
-  const blockH = Math.max(82, Math.min(112, (bottomLimit - y - 18) / meals.length))
+  const blockH = Math.max(92, Math.min(116, (bottomLimit - y - 18) / meals.length))
 
   for (let i = 0; i < meals.length; i++) {
     const res = results[i]
 
     drawRoundRect(20, y, W - 40, blockH, 16, '#FFFFFF', '#111', 2)
-    drawText(mealName(i), 34, y + 10, 16, '#111', 'left', 'bold')
+
+    drawText(mealName(i), 34, y + 10, lang === 'en' ? 20 : 16, '#111', 'left', 'bold')
 
     if (!res) {
-      drawText(t('noRecord'), W / 2, y + 12, 13, '#777', 'center', 'bold')
+      drawText(t('noRecord'), W / 2, y + 42, 13, '#777', 'center', 'bold')
       y += blockH + 8
       continue
     }
@@ -2931,21 +2936,20 @@ function drawDayResult() {
     const selfP = getMealPoint(game, selfId, i)
     const oppP = getMealPoint(game, oppId, i)
 
-    drawText(`${selfP}:${oppP}`, W - 34, y + 10, 16, '#E94335', 'right', 'bold')
+    drawText(`${selfP}:${oppP}`, W - 34, y + 10, 18, '#E94335', 'right', 'bold')
 
     const bustSelfText = selfBusted ? (lang === 'en' ? ' Bust' : '爆') : ''
     const bustOppText = oppBusted ? (lang === 'en' ? ' Bust' : '爆') : ''
+    drawText(`${t('you')} ${selfRaw}${bustSelfText}  |  ${t('opponent')} ${oppRaw}${bustOppText}`, 34, y + 38, 11, '#333', 'left', 'bold')
 
-    drawText(`${t('you')} ${selfRaw}${bustSelfText}｜${t('opponent')} ${oppRaw}${bustOppText}`, 92, y + 12, 11, '#333', 'left', 'bold')
-
-    const cardY = y + 34
+    const cardY = y + 60
     const colW = (W - 76) / 2
 
     drawText(t('opponent'), 34, cardY, 10, '#777', 'left', 'bold')
-    drawTinyCards(oppCards, 34, cardY + 14, colW, blockH - 50, 26)
+    drawTinyCards(oppCards, 34, cardY + 13, colW, blockH - 74, 24)
 
     drawText(t('you'), 42 + colW, cardY, 10, '#777', 'left', 'bold')
-    drawTinyCards(selfCards, 42 + colW, cardY + 14, colW, blockH - 50, 26)
+    drawTinyCards(selfCards, 42 + colW, cardY + 13, colW, blockH - 74, 24)
 
     y += blockH + 8
   }
@@ -2960,6 +2964,8 @@ function drawDayResult() {
     addButton('restart_home', t('restartHome'), 24, H - SAFE_BOTTOM - 72, W - 48, 58, '#111', '#fff', 22)
   }
 }
+
+
 
 
 
