@@ -1,5 +1,5 @@
 // game.js
-// 利禄卡 Online v4.9 顶部安全区UI优化版
+// 利禄卡 Online v4.10 热量布局与夜宵星空背景优化版
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -2153,13 +2153,57 @@ function getMealTheme(index) {
   }
 
   return {
-    bg: '#101010',
+    bg: '#070B16',
     panel: '#F7F1E8',
     opponentPanel: '#D8D0C4',
     center: '#EFE6DA',
     accent: '#111',
     text: '#111'
   }
+}
+
+
+function isNightThemeActive() {
+  if (appMode === 'home' || !game) return false
+  return Number(game.mealIndex || 0) === 3
+}
+
+function drawNightSkyDetails() {
+  if (!isNightThemeActive()) return
+
+  const grd = ctx.createLinearGradient(0, 0, 0, H)
+  grd.addColorStop(0, '#070B16')
+  grd.addColorStop(0.55, '#0D1730')
+  grd.addColorStop(1, '#111217')
+  ctx.fillStyle = grd
+  ctx.fillRect(0, 0, W, H)
+
+  ctx.save()
+  for (let i = 0; i < 42; i++) {
+    const x = (Math.sin(i * 12.9898) * 43758.5453 % 1 + 1) % 1 * W
+    const y = SAFE_TOP + 30 + ((Math.sin(i * 78.233) * 24634.6345 % 1 + 1) % 1) * (H - SAFE_TOP - SAFE_BOTTOM - 120)
+    const r = i % 9 === 0 ? 1.35 : i % 5 === 0 ? 0.95 : 0.55
+    const alpha = i % 7 === 0 ? 0.82 : 0.42
+
+    ctx.globalAlpha = alpha
+    ctx.fillStyle = '#FFFFFF'
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.fill()
+
+    if (i % 11 === 0) {
+      ctx.globalAlpha = 0.32
+      ctx.strokeStyle = '#FFE8A5'
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.moveTo(x - 5, y)
+      ctx.lineTo(x + 5, y)
+      ctx.moveTo(x, y - 5)
+      ctx.lineTo(x, y + 5)
+      ctx.stroke()
+    }
+  }
+  ctx.restore()
 }
 
 function getPageBg() {
@@ -2921,6 +2965,7 @@ function drawResultPlayer(title, pid, y, h) {
 
 
 
+
 function drawDayResult() {
   const selfId = getSelfId()
   const oppId = otherPlayer(selfId)
@@ -2945,17 +2990,35 @@ function drawDayResult() {
   const selfColor = selfWin ? '#E94335' : selfPoint === oppPoint ? '#E94335' : '#888'
   const oppColor = oppWin ? '#E94335' : selfPoint === oppPoint ? '#E94335' : '#888'
 
-  drawRoundRect(20, SAFE_TOP + 42, W - 40, 126, 22, '#FFFFFF', '#111', 3)
-  drawText(finalText, W / 2, SAFE_TOP + 56, 27, selfWin ? '#E94335' : '#111', 'center', 'bold')
-  drawText(finalSubText, W / 2, SAFE_TOP + 90, 13, '#555', 'center', 'bold')
+  const topX = 20
+  const topY = SAFE_TOP + 42
+  const topW = W - 40
+  const topH = H < 760 ? 138 : 146
 
-  // v3.6：最终几比几两边显示双方最终卡路里。
-  drawText(`${selfKcal} kcal`, W * 0.24, SAFE_TOP + 120, 18, selfColor, 'center', 'bold')
-  drawText(`你 ${selfPoint} : ${oppPoint} 对手`, W / 2, SAFE_TOP + 116, 22, '#111', 'center', 'bold')
-  drawText(`${oppKcal} kcal`, W * 0.76, SAFE_TOP + 120, 18, oppColor, 'center', 'bold')
+  drawRoundRect(topX, topY, topW, topH, 22, '#FFFFFF', '#111', 3)
+  drawText(finalText, W / 2, topY + 18, H < 760 ? 27 : 30, selfWin ? '#E94335' : '#111', 'center', 'bold')
+  drawText(finalSubText, W / 2, topY + 55, 13, '#555', 'center', 'bold')
+
+  // v4.10：手机端总热量与比分分成三栏，避免文字互相遮挡。
+  const labelY = topY + 82
+  const valueY = topY + 104
+  const leftX = topX + topW * 0.24
+  const midX = topX + topW * 0.50
+  const rightX = topX + topW * 0.76
+  const smallLabel = W < 390 ? 11 : 12
+  const kcalSize = W < 390 ? 17 : 19
+  const scoreSize = W < 390 ? 25 : 28
+
+  drawText('你的总热量', leftX, labelY, smallLabel, '#555', 'center', 'bold')
+  drawText('比分', midX, labelY, smallLabel, '#555', 'center', 'bold')
+  drawText('对手总热量', rightX, labelY, smallLabel, '#555', 'center', 'bold')
+
+  drawText(`${selfKcal} kcal`, leftX, valueY, kcalSize, selfColor, 'center', 'bold')
+  drawText(`${selfPoint} : ${oppPoint}`, midX, valueY - 2, scoreSize, '#111', 'center', 'bold')
+  drawText(`${oppKcal} kcal`, rightX, valueY, kcalSize, oppColor, 'center', 'bold')
 
   const results = safeArray(game.mealResults)
-  let y = SAFE_TOP + 184
+  let y = topY + topH + 18
   const bottomLimit = H - SAFE_BOTTOM - 104
   const blockH = Math.max(82, Math.min(112, (bottomLimit - y - 18) / meals.length))
 
@@ -2987,8 +3050,10 @@ function drawDayResult() {
 
     const cardY = y + 34
     const colW = (W - 76) / 2
+
     drawText('对方', 34, cardY, 10, '#777', 'left', 'bold')
     drawTinyCards(oppCards, 34, cardY + 14, colW, blockH - 50, 26)
+
     drawText('你', 42 + colW, cardY, 10, '#777', 'left', 'bold')
     drawTinyCards(selfCards, 42 + colW, cardY + 14, colW, blockH - 50, 26)
 
@@ -2997,13 +3062,16 @@ function drawDayResult() {
 
   if (appMode === 'online') {
     const ready = game.replayReady || { p1: false, p2: false }
-    const statusText = `下一整局准备：你 ${ready[selfId] ? '已准备' : '未准备'}｜对方 ${ready[oppId] ? '已准备' : '未准备'}`
+    const statusText = `准备下一局：你 ${ready[selfId] ? '已准备' : '未准备'}｜对方 ${ready[oppId] ? '已准备' : '未准备'}`
+
     drawText(statusText, W / 2, H - SAFE_BOTTOM - 92, 13, '#E94335', 'center', 'bold')
     addButton(ready[selfId] ? 'noop' : 'replay_ready', ready[selfId] ? '已准备，等待对方' : '准备下一局', 24, H - SAFE_BOTTOM - 72, W - 48, 58, '#111', '#fff', 22)
   } else {
     addButton('restart_home', '返回首页', 24, H - SAFE_BOTTOM - 72, W - 48, 58, '#111', '#fff', 22)
   }
 }
+
+
 
 // =========================
 // 渲染入口
@@ -3048,6 +3116,7 @@ function render() {
   ctx.clearRect(0, 0, W, H)
   ctx.fillStyle = getPageBg()
   ctx.fillRect(0, 0, W, H)
+  drawNightSkyDetails()
 
   if (appMode === 'home') {
     drawHome()
