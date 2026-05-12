@@ -335,13 +335,15 @@ function drawMusicButton() {
       ? t('musicOn')
       : t('musicOff')
 
-  // v6.8: music and language buttons share one baseline and stay above the game panels.
-  const musicW = lang === 'en' ? 74 : 62
-  const btnH = 22
-  const topY = 4
-  addButton('music_toggle', label, 8, topY, musicW, btnH, '#FFFFFF', '#111', 9)
-  addButton('lang_toggle', t('langBtn'), 14 + musicW, topY, 34, btnH, '#FFFFFF', '#111', 10)
+  const y = 4
+  const h = 22
+  const font = 9
+  const musicW = lang === 'en' ? 64 : 50
+
+  addButton('music_toggle', label, 8, y, musicW, h, '#FFFFFF', '#111', font)
+  addButton('lang_toggle', t('langBtn'), 12 + musicW, y, 32, h, '#FFFFFF', '#111', font)
 }
+
 
 // =========================
 // 基础工具
@@ -2180,6 +2182,21 @@ function handleTarotSlotTap() {
 }
 
 
+function drawPolkaDots(color, startX, startY, endX, endY, r, gap) {
+  ctx.save()
+  ctx.fillStyle = color
+
+  for (let y = startY; y <= endY; y += gap) {
+    for (let x = startX; x <= endX; x += gap) {
+      ctx.beginPath()
+      ctx.arc(x, y, r, 0, Math.PI * 2)
+      ctx.fill()
+    }
+  }
+
+  ctx.restore()
+}
+
 function drawHome() {
   const panelX = 24
   const panelY = SAFE_TOP + 26
@@ -2187,8 +2204,8 @@ function drawHome() {
   const bottomButtonsH = 172
   const panelH = Math.max(360, H - panelY - bottomButtonsH - SAFE_BOTTOM - 18)
 
-  drawRoundRect(-40, H - 220, 160, 160, 36, '#A9F0D1', null, 0)
-  drawRoundRect(W - 92, SAFE_TOP + 90, 130, 130, 32, '#FF9BB4', null, 0)
+  drawPolkaDots('#A9F0D1', 18, H - 260, W - 18, H - 28, 7, 28)
+  drawPolkaDots('#FF9BB4', 18, SAFE_TOP + 78, W - 18, SAFE_TOP + 260, 7, 28)
 
   drawRoundRect(panelX, panelY, panelW, panelH, 28, '#FFFFFF', '#111', 4)
 
@@ -2261,8 +2278,15 @@ function drawHome() {
 
 function drawHomeMiniButton() {
   if (appMode !== 'single') return
- addButton('home', t('home'), W - 74, SAFE_TOP - 8, 54, 30, '#FFFFFF', '#111', 13)
+
+  const y = 4
+  const h = 22
+  const font = 9
+  const w = lang === 'en' ? 46 : 38
+
+  addButton('home', t('home'), W - w - 8, y, w, h, '#FFFFFF', '#111', font)
 }
+
 
 function drawTopBadge() {
   if (appMode !== 'online') return
@@ -2412,7 +2436,7 @@ function drawCenterPanel(x, y, w, h) {
   ctx.restore()
 
   drawRoundRect(barX, barY, barW, barH, r, null, '#111', 3)
-  drawText(`${t('warning')} ${meal.threshold}`, barX + barW / 2, barY + 7, 12, '#111', 'center', 'bold')
+  drawText(`${t('warning')} ${meal.threshold}`, barX + barW / 2, barY + 8, lang === 'en' ? 9 : 10, '#111', 'center', 'bold')
 
   const hint = getActionHint(game, selfId)
   wrapText(hint, x + 16, y + 48, w - 32, 18, 13, '#333', 'bold', 2)
