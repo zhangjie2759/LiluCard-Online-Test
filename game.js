@@ -116,7 +116,7 @@ let buttons = []
 let message = ''
 let rulesExpanded = false
 let tarotCard = null
-let tarotState = 0 // 0 未出票 / 1 正在出票 / 2 已出票
+let tarotState = 0 // 0 未出票 / 1 出票动画 / 2 已出票
 let tarotRevealStartedAt = 0
 
 // =========================
@@ -129,7 +129,7 @@ const I18N = {
     langBtn: 'EN',
     musicOn: '音乐 开', musicOff: '音乐 关', musicErr: '音乐失败',
     title: '利禄卡', subtitle: 'LILU CARDS', tagline: '卡路里外卖对战', slogan: '我的嘴，就是秤。', modes: '单机 / 开房间 / 加入房间',
-    tarotTitle: '美食塔罗牌', tarotHint: '点一下，今天吃什么', tarotButton: '点击出票', tarotLoading: '正在出票', tarotResultPrefix: '你今天适合吃', tarotAgain: '再点一次重新抽',
+    tarotTitle: '美食塔罗牌', tarotHint: '', tarotButton: '', tarotLoading: '', tarotResultPrefix: '你今天适合吃', tarotAgain: '',
     rules: '查看游戏规则', rulesTitle: '游戏规则', close: '收起', swipe: '上下滑动',
     solo: '单机游戏', create: '开房间', join: '加入房间', home: '首页',
     finalResult: '今日结算', finalWin: '恭喜你赢了！', finalLose: '你输了', finalDraw: '平局', finalWinSub: '你赢得了这一整局', finalLoseSub: '对方赢得了这一整局', finalDrawSub: '双方今天吃得不相上下',
@@ -151,7 +151,7 @@ const I18N = {
     langBtn: '中',
     musicOn: 'Music On', musicOff: 'Music Off', musicErr: 'Music Err',
     title: 'LiluCard', subtitle: 'LILU CARDS', tagline: 'Calorie Takeout Duel', slogan: 'My mouth is the scale.', modes: 'Solo / Create / Join',
-    tarotTitle: 'Food Tarot', tarotHint: "Tap for today's food", tarotButton: 'Draw', tarotLoading: 'Drawing', tarotResultPrefix: 'Today you should eat ', tarotAgain: 'Tap again to redraw',
+    tarotTitle: 'Food Tarot', tarotHint: '', tarotButton: '', tarotLoading: '', tarotResultPrefix: 'Today you should eat ', tarotAgain: '',
     rules: 'How to Play', rulesTitle: 'How to Play', close: 'Close', swipe: 'Scroll',
     solo: 'Solo', create: 'Create Room', join: 'Join Room', home: 'Home',
     finalResult: 'Final Result', finalWin: 'You Win!', finalLose: 'You Lose', finalDraw: 'Draw', finalWinSub: 'You won the full day', finalLoseSub: 'Rival won the full day', finalDrawSub: 'Both ate equally hard',
@@ -267,9 +267,11 @@ function drawMusicButton() {
       ? t('musicOn')
       : t('musicOff')
 
-  const musicW = lang === 'en' ? 82 : 72
-  addButton('music_toggle', label, 16, SAFE_TOP + 2, musicW, 30, '#FFFFFF', '#111', 11)
-  addButton('lang_toggle', t('langBtn'), 22 + musicW, SAFE_TOP + 2, 36, 30, '#FFFFFF', '#111', 12)
+  // v6.7：顶部按钮上移并压薄，避免压到首页主视觉和游戏 UI。
+  const musicW = lang === 'en' ? 70 : 58
+  const topY = Math.max(2, SAFE_TOP - 14)
+  addButton('music_toggle', label, 8, topY, musicW, 23, '#FFFFFF', '#111', 9)
+  addButton('lang_toggle', t('langBtn'), 12 + musicW, topY, 32, 23, '#FFFFFF', '#111', 10)
 }
 
 // =========================
@@ -1704,7 +1706,7 @@ function getMealTheme(index) {
   }
 
   return {
-    bg: '#101010',
+    bg: '#15141A',
     panel: '#F7F1E8',
     opponentPanel: '#D8D0C4',
     center: '#EFE6DA',
@@ -1717,6 +1719,30 @@ function getPageBg() {
   if (appMode === 'home' || !game) return '#F7F1E8'
   return getMealTheme(game.mealIndex).bg
 }
+
+function drawNightStars() {
+  if (!game || game.mealIndex !== 3) return
+  if (appMode === 'home') return
+
+  ctx.save()
+  const stars = [
+    [0.12, 0.10, 1.2, 0.60], [0.28, 0.16, 0.9, 0.45], [0.73, 0.12, 1.4, 0.55],
+    [0.86, 0.21, 0.8, 0.38], [0.18, 0.34, 0.7, 0.34], [0.66, 0.31, 1.0, 0.42],
+    [0.92, 0.44, 1.1, 0.36], [0.08, 0.62, 0.8, 0.30], [0.36, 0.72, 1.0, 0.32],
+    [0.79, 0.78, 0.7, 0.28], [0.52, 0.08, 0.6, 0.32], [0.44, 0.24, 1.1, 0.40]
+  ]
+  stars.forEach(([px, py, r, a]) => {
+    ctx.globalAlpha = a
+    ctx.fillStyle = '#FFF1B8'
+    ctx.beginPath()
+    ctx.arc(W * px, H * py, r, 0, Math.PI * 2)
+    ctx.fill()
+  })
+  ctx.globalAlpha = 0.10
+  drawRoundRect(W - 118, SAFE_TOP + 42, 78, 78, 39, '#F6DFA6', null, 0)
+  ctx.restore()
+}
+
 
 function getMealCardsFromResult(result, pid) {
   if (!result) return []
@@ -2005,20 +2031,20 @@ function drawTarotSlot(panelX, panelY, panelW, panelH) {
   if (rulesExpanded) return
 
   const cx = W / 2
-  const slotW = Math.min(164, panelW - 118)
-  const slotH = 28
+  // v6.7：出票口更窄、更薄，只保留“缝”的感觉。
+  const slotW = Math.min(118, panelW - 156)
+  const slotH = 16
   const slotX = cx - slotW / 2
-  const slotY = Math.min(panelY + panelH - 176, panelY + 220)
+  const slotY = Math.min(panelY + panelH - 168, panelY + 218)
 
-  const cardW = Math.min(58, panelW * 0.18)
+  const cardW = Math.min(48, panelW * 0.15)
   const cardH = Math.round(cardW * 1121 / 671)
   const cardX = cx - cardW / 2
 
-  // 只登记点击区，不画系统按钮外观。
-  buttons.push({ id: 'tarot_slot', x: slotX - 10, y: slotY - 24, w: slotW + 20, h: cardH + 88 })
+  // 点击区略大于视觉元素，但不显示任何提示文字。
+  buttons.push({ id: 'tarot_slot', x: slotX - 18, y: slotY - 22, w: slotW + 36, h: cardH + 78 })
 
-  drawText(t('tarotTitle'), cx, slotY - 26, 14, '#111', 'center', 'bold')
-  drawText(t('tarotHint'), cx, slotY - 10, 10, '#777', 'center', 'bold')
+  drawText(t('tarotTitle'), cx, slotY - 22, 13, '#111', 'center', 'bold')
 
   let progress = tarotState === 2 ? 1 : 0
   if (tarotState === 1) {
@@ -2032,32 +2058,28 @@ function drawTarotSlot(panelX, panelY, panelW, panelH) {
   }
 
   if ((tarotState === 1 || tarotState === 2) && tarotCard) {
-    const hiddenTop = cardH * 0.74
-    const finalY = slotY + slotH - 8
-    const startY = slotY + slotH - hiddenTop
+    // 卡牌从缝里慢慢吐出来：开始时只露出下端，最终仍被出票口压住上沿。
+    const finalY = slotY + slotH - 3
+    const startY = slotY + slotH - cardH + 8
     const cardY = startY + (finalY - startY) * progress
 
     ctx.save()
     ctx.beginPath()
-    // 从出票口下沿开始裁切：上半部分永远像是在黑洞里。
-    ctx.rect(cardX - 6, slotY + slotH * 0.48, cardW + 12, cardH + 22)
+    ctx.rect(cardX - 8, slotY + slotH - 1, cardW + 16, cardH + 18)
     ctx.clip()
     drawCard(tarotCard, cardX, cardY, cardW, cardH)
     ctx.restore()
   }
 
-  // 黑色出票口最后画，压住卡牌上端。
-  drawRoundRect(slotX + 3, slotY + 5, slotW, slotH, 14, 'rgba(0,0,0,0.18)', null, 0)
-  drawRoundRect(slotX, slotY, slotW, slotH, 14, '#111', '#111', 2)
-  drawRoundRect(slotX + 16, slotY + 9, slotW - 32, 7, 4, '#2A2A2A', null, 0)
-  drawText(tarotState === 0 ? t('tarotButton') : t('tarotLoading'), cx, slotY + 6, 11, '#FFE169', 'center', 'bold')
+  // 出票口最后画，形成“黑色缝隙压住卡牌上端”的层级。
+  drawRoundRect(slotX + 2, slotY + 4, slotW, slotH, 8, 'rgba(0,0,0,0.16)', null, 0)
+  drawRoundRect(slotX, slotY, slotW, slotH, 8, '#111', '#111', 2)
+  drawRoundRect(slotX + 14, slotY + 6, slotW - 28, 3, 2, '#2A2A2A', null, 0)
 
   if (tarotState === 2 && tarotCard) {
     const textY = slotY + slotH + cardH + 12
     const resultText = `${t('tarotResultPrefix')}${tarotCard.name}`
-    drawRoundRect(cx - 94, textY - 5, 188, 28, 14, '#111', null, 0)
-    drawText(resultText, cx, textY + 1, 11, '#FFE169', 'center', 'bold')
-    drawText(t('tarotAgain'), cx, textY + 30, 9, '#777', 'center', 'bold')
+    drawText(resultText, cx, textY + 1, 12, '#16365C', 'center', 'bold')
   }
 }
 
@@ -2563,16 +2585,14 @@ function drawDayResult() {
     finalSubText = t('finalLoseSub')
   }
 
-  drawText(t('finalResult'), 24, SAFE_TOP + 8, 30, '#111', 'left', 'bold')
-
-  drawRoundRect(20, SAFE_TOP + 48, W - 40, 108, 22, '#FFFFFF', '#111', 3)
-  drawText(finalText, W / 2, SAFE_TOP + 62, 28, selfPoint > oppPoint ? '#E94335' : '#111', 'center', 'bold')
-  drawText(finalSubText, W / 2, SAFE_TOP + 96, 13, '#555', 'center', 'bold')
-  drawText(`${t('you')} ${selfPoint} : ${oppPoint} ${t('rival')}`, W / 2, SAFE_TOP + 118, 22, '#111', 'center', 'bold')
-  drawText(`${t('dayKcal')}：${t('you')} ${getDayTotalKcal(game, selfId)} kcal｜${t('rival')} ${getDayTotalKcal(game, oppId)} kcal`, W / 2, SAFE_TOP + 142, 11, '#555', 'center', 'bold')
+  drawRoundRect(20, SAFE_TOP + 30, W - 40, 108, 22, '#FFFFFF', '#111', 3)
+  drawText(finalText, W / 2, SAFE_TOP + 44, 28, selfPoint > oppPoint ? '#E94335' : '#111', 'center', 'bold')
+  drawText(finalSubText, W / 2, SAFE_TOP + 78, 13, '#555', 'center', 'bold')
+  drawText(`${t('you')} ${selfPoint} : ${oppPoint} ${t('rival')}`, W / 2, SAFE_TOP + 100, 22, '#111', 'center', 'bold')
+  drawText(`${t('dayKcal')}：${t('you')} ${getDayTotalKcal(game, selfId)} kcal｜${t('rival')} ${getDayTotalKcal(game, oppId)} kcal`, W / 2, SAFE_TOP + 124, 11, '#555', 'center', 'bold')
 
   const results = safeArray(game.mealResults)
-  let y = SAFE_TOP + 170
+  let y = SAFE_TOP + 150
   const bottomLimit = H - SAFE_BOTTOM - 104
   const blockH = Math.max(82, Math.min(112, (bottomLimit - y - 18) / meals.length))
 
@@ -2654,6 +2674,7 @@ function render() {
   ctx.clearRect(0, 0, W, H)
   ctx.fillStyle = getPageBg()
   ctx.fillRect(0, 0, W, H)
+  drawNightStars()
 
   if (appMode === 'home') {
     drawHome()
