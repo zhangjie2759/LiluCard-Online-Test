@@ -2173,11 +2173,12 @@ function drawTarotSlot(panelX, panelY, panelW, panelH) {
   if (rulesExpanded) return
 
   const cx = W / 2
-  // v6.7：出票口更窄、更薄，只保留“缝”的感觉。
-  const slotW = Math.min(118, panelW - 156)
-  const slotH = 16
+  // v7.2：出票口更像一条细缝，卡牌从内部细缝吐出，并保持在最上层绘制。
+  const slotW = Math.min(104, panelW - 176)
+  const slotH = 13
   const slotX = cx - slotW / 2
   const slotY = Math.min(panelY + panelH - 168, panelY + 218)
+  const innerY = slotY + 7
 
   const cardW = Math.min(48, panelW * 0.15)
   const cardH = Math.round(cardW * 1121 / 671)
@@ -2199,24 +2200,25 @@ function drawTarotSlot(panelX, panelY, panelW, panelH) {
     }
   }
 
+  // 先画出票口本体，再画卡牌：这样卡牌不会被其他 UI 或出票口大黑块盖住。
+  drawRoundRect(slotX + 2, slotY + 4, slotW, slotH, 7, 'rgba(0,0,0,0.16)', null, 0)
+  drawRoundRect(slotX, slotY, slotW, slotH, 7, '#111', '#111', 2)
+  drawRoundRect(slotX + 13, innerY - 1, slotW - 26, 2.8, 2, '#050505', null, 0)
+  drawRoundRect(slotX + 16, innerY + 1, slotW - 32, 1.4, 1, '#2A2A2A', null, 0)
+
   if ((tarotState === 1 || tarotState === 2) && tarotCard) {
-    // 卡牌从缝里慢慢吐出来：开始时只露出下端，最终仍被出票口压住上沿。
-    const finalY = slotY + slotH - 3
-    const startY = slotY + slotH - cardH + 8
+    // 从“内部细缝”吐出：开始只露出卡牌下端，最终卡牌上沿刚好贴着细缝。
+    const startY = innerY - cardH + 12
+    const finalY = innerY + 1
     const cardY = startY + (finalY - startY) * progress
 
     ctx.save()
     ctx.beginPath()
-    ctx.rect(cardX - 8, slotY + slotH - 1, cardW + 16, cardH + 18)
+    ctx.rect(cardX - 8, innerY, cardW + 16, cardH + 28)
     ctx.clip()
     drawCard(tarotCard, cardX, cardY, cardW, cardH)
     ctx.restore()
   }
-
-  // 出票口最后画，形成“黑色缝隙压住卡牌上端”的层级。
-  drawRoundRect(slotX + 2, slotY + 4, slotW, slotH, 8, 'rgba(0,0,0,0.16)', null, 0)
-  drawRoundRect(slotX, slotY, slotW, slotH, 8, '#111', '#111', 2)
-  drawRoundRect(slotX + 14, slotY + 6, slotW - 28, 3, 2, '#2A2A2A', null, 0)
 
   if (tarotState === 2 && tarotCard) {
     const textY = slotY + slotH + cardH + 12
