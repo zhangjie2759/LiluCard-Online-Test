@@ -2204,9 +2204,8 @@ function drawHome() {
   const bottomButtonsH = 172
   const panelH = Math.max(360, H - panelY - bottomButtonsH - SAFE_BOTTOM - 18)
 
-  drawPolkaDots('#A9F0D1', 18, H - 260, W - 18, H - 28, 7, 28)
-  drawPolkaDots('#FF9BB4', 18, SAFE_TOP + 78, W - 18, SAFE_TOP + 260, 7, 28)
-
+ drawRoundRect(-40, H - 220, 160, 160, 36, '#A9F0D1', null, 0)
+drawRoundRect(W - 92, SAFE_TOP + 90, 130, 130, 32, '#FF9BB4', null, 0)
   drawRoundRect(panelX, panelY, panelW, panelH, 28, '#FFFFFF', '#111', 4)
 
   if (!rulesExpanded) {
@@ -2249,8 +2248,8 @@ function drawHome() {
     })
 
     const contentH = yy - startY
-    rulesMaxScroll = Math.max(0, contentH - viewH + 18)
-    rulesScroll = Math.max(0, Math.min(rulesScroll, rulesMaxScroll))
+     胜负目标'MaxScroll = Math.max(0, contentH - viewH + 18)
+     胜负目标'Scroll = Math.max(0, Math.min(rulesScroll, rulesMaxScroll))
 
     ctx.restore()
 
