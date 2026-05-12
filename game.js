@@ -182,8 +182,8 @@ const I18N = {
       '一次性点完，然后统一结算。',
 
       '✅ 一句话总结',
-      '在不爆的前提下，会比对方更接近极限。'
-    ]"""
+      '在不爆的前提下，比对方更接近极限。'
+    ]
   },
   en: {
     langBtn: '中',
@@ -203,7 +203,7 @@ const I18N = {
     statusBust: 'Bust', statusSafe: 'Safe', statusStood: 'Stopped', statusOrdering: 'Ordering', statusOpening: 'Opening', statusWatching: 'Watching',
     mealPoint: 'Meal points', combo: 'Combo', comboNone: 'No combo', comboBustNone: 'Bust: no combo', yourOrders: 'Your Orders', rivalOrders: 'Rival Orders', quoteWin: 'You really know how to eat.', quoteLose: 'Eating well did nothing.', quoteDraw: 'Both of you can bluff.', youWonMeal: 'You won this meal', youLostMeal: 'You lost this meal', mealDraw: 'Meal Draw',
     rulesLines: [
-     '🎯 Goal',
+      '🎯 Goal',
       'Winning a meal gives 1 point. There are 4 meals in a day. Higher final score wins.',
 
       '🔁 Game Flow',
@@ -243,7 +243,7 @@ const I18N = {
 
       '✅ Summary',
       'Do not bust. Get closer to the limit than your rival.'
-    ]"""
+    ]
   }
 }
 
@@ -2264,8 +2264,9 @@ function drawHome() {
   const bottomButtonsH = 172
   const panelH = Math.max(360, H - panelY - bottomButtonsH - SAFE_BOTTOM - 18)
 
- drawRoundRect(-40, H - 220, 160, 160, 36, '#A9F0D1', null, 0)
-drawRoundRect(W - 92, SAFE_TOP + 90, 130, 130, 32, '#FF9BB4', null, 0)
+  drawRoundRect(-40, H - 220, 160, 160, 36, '#A9F0D1', null, 0)
+  drawRoundRect(W - 92, SAFE_TOP + 90, 130, 130, 32, '#FF9BB4', null, 0)
+
   drawRoundRect(panelX, panelY, panelW, panelH, 28, '#FFFFFF', '#111', 4)
 
   if (!rulesExpanded) {
@@ -2308,8 +2309,8 @@ drawRoundRect(W - 92, SAFE_TOP + 90, 130, 130, 32, '#FF9BB4', null, 0)
     })
 
     const contentH = yy - startY
-     胜负目标'MaxScroll = Math.max(0, contentH - viewH + 18)
-     胜负目标'Scroll = Math.max(0, Math.min(rulesScroll, rulesMaxScroll))
+    rulesMaxScroll = Math.max(0, contentH - viewH + 18)
+    rulesScroll = Math.max(0, Math.min(rulesScroll, rulesMaxScroll))
 
     ctx.restore()
 
