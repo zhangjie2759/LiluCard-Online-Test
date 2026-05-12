@@ -120,6 +120,69 @@ let tarotState = 0 // 0 未出票 / 1 正在出票 / 2 已出票
 let tarotRevealStartedAt = 0
 
 // =========================
+// 语言切换（v6.6 安全恢复版）
+// =========================
+let lang = localStorage.getItem('lilucard_lang') || 'zh'
+
+const I18N = {
+  zh: {
+    langBtn: 'EN',
+    musicOn: '音乐 开', musicOff: '音乐 关', musicErr: '音乐失败',
+    title: '利禄卡', subtitle: 'LILU CARDS', tagline: '卡路里外卖对战', slogan: '我的嘴，就是秤。', modes: '单机 / 开房间 / 加入房间',
+    tarotTitle: '美食塔罗牌', tarotHint: '点一下，今天吃什么', tarotButton: '点击出票', tarotLoading: '正在出票', tarotResultPrefix: '你今天适合吃', tarotAgain: '再点一次重新抽',
+    rules: '查看游戏规则', rulesTitle: '游戏规则', close: '收起', swipe: '上下滑动',
+    solo: '单机游戏', create: '开房间', join: '加入房间', home: '首页',
+    finalResult: '今日结算', finalWin: '恭喜你赢了！', finalLose: '你输了', finalDraw: '平局', finalWinSub: '你赢得了这一整局', finalLoseSub: '对方赢得了这一整局', finalDrawSub: '双方今天吃得不相上下',
+    you: '你', rival: '对手', dayKcal: '全日热量', noRecord: '无记录', nextReady: '下一整局准备', ready: '已准备', notReady: '未准备', readyNext: '准备下一局', waitingRival: '已准备，等待对方', backHome: '返回首页',
+    rulesLines: [
+      '1. 双方准备后开局，早餐 / 午餐 / 晚餐 / 夜宵共 4 小局。',
+      '2. 每局先进入起手阶段，双方各抽 2 张：第 1 张是底牌，第 2 张是明牌；起手不消耗外卖次数。',
+      '3. 早餐起手完成后随机先手；午餐自动换另一方先手；晚餐换回早餐先手方。',
+      '4. 点餐阶段轮流操作。轮到你时，可选择 荤 / 素 / 主食 / 甜点，或点击收手。',
+      '5. 对方只有底牌未知，其余明牌可见；对方热量显示为「? + 明牌热量」。',
+      '6. 爆牌不会立刻摊牌，你还可以继续点外卖迷惑对方；只有主动开吃才结束。',
+      '7. 双方都收手后进入本餐结算，公开双方全部外卖、热量、爆牌情况和胜负。',
+      '8. 夜宵不分先后，双方用剩余外卖次数选择搭配；双方选完后点击展示夜宵再结算。',
+      '9. 四局结束后进入今日结算，比分更高者获胜；平局则双方都很会吃。',
+      '10. 联机结束后不会退出房间，双方可继续准备下一整局。'
+    ]
+  },
+  en: {
+    langBtn: '中',
+    musicOn: 'Music On', musicOff: 'Music Off', musicErr: 'Music Err',
+    title: 'LiluCard', subtitle: 'LILU CARDS', tagline: 'Calorie Takeout Duel', slogan: 'My mouth is the scale.', modes: 'Solo / Create / Join',
+    tarotTitle: 'Food Tarot', tarotHint: "Tap for today's food", tarotButton: 'Draw', tarotLoading: 'Drawing', tarotResultPrefix: 'Today you should eat ', tarotAgain: 'Tap again to redraw',
+    rules: 'How to Play', rulesTitle: 'How to Play', close: 'Close', swipe: 'Scroll',
+    solo: 'Solo', create: 'Create Room', join: 'Join Room', home: 'Home',
+    finalResult: 'Final Result', finalWin: 'You Win!', finalLose: 'You Lose', finalDraw: 'Draw', finalWinSub: 'You won the full day', finalLoseSub: 'Rival won the full day', finalDrawSub: 'Both ate equally hard',
+    you: 'You', rival: 'Rival', dayKcal: 'Day Total', noRecord: 'No record', nextReady: 'Next round ready', ready: 'Ready', notReady: 'Not ready', readyNext: 'Ready Next Round', waitingRival: 'Ready, waiting', backHome: 'Back Home',
+    rulesLines: [
+      '1. The game has 4 meals: Breakfast / Lunch / Dinner / Night Snack.',
+      '2. Each meal starts with 2 opening cards. The first is your hidden card. Opening cards do not cost order chances.',
+      '3. Breakfast starter is random. Lunch swaps starter. Dinner swaps back.',
+      '4. On your turn, choose Meat / Veg / Staple / Dessert, or stop and eat.',
+      "5. The rival\'s hidden card is unknown. Other cards are visible.",
+      '6. Busting does not reveal immediately. You may still bluff until you stop.',
+      '7. When both players stop, all cards are revealed and the meal is settled.',
+      '8. Night Snack uses remaining order chances. Both players pick first, then reveal together.',
+      '9. After 4 meals, final score decides the winner.',
+      '10. Online rooms stay open for another full round.'
+    ]
+  }
+}
+
+function t(key) {
+  const pack = I18N[lang] || I18N.zh
+  return pack[key] !== undefined ? pack[key] : (I18N.zh[key] || key)
+}
+
+function toggleLang() {
+  lang = lang === 'zh' ? 'en' : 'zh'
+  localStorage.setItem('lilucard_lang', lang)
+  requestRender()
+}
+
+// =========================
 // 背景音乐 BGM
 // =========================
 // 请在 GitHub 根目录上传：audio/bgm.mp3
@@ -199,12 +262,14 @@ function toggleBgm() {
 
 function drawMusicButton() {
   const label = bgmLoadFailed
-    ? '音乐失败'
+    ? t('musicErr')
     : bgmEnabled
-      ? '音乐 开'
-      : '音乐 关'
+      ? t('musicOn')
+      : t('musicOff')
 
-  addButton('music_toggle', label, 16, SAFE_TOP + 2, 82, 30, '#FFFFFF', '#111', 12)
+  const musicW = lang === 'en' ? 82 : 72
+  addButton('music_toggle', label, 16, SAFE_TOP + 2, musicW, 30, '#FFFFFF', '#111', 11)
+  addButton('lang_toggle', t('langBtn'), 22 + musicW, SAFE_TOP + 2, 36, 30, '#FFFFFF', '#111', 12)
 }
 
 // =========================
@@ -1940,20 +2005,20 @@ function drawTarotSlot(panelX, panelY, panelW, panelH) {
   if (rulesExpanded) return
 
   const cx = W / 2
-  const slotW = Math.min(230, panelW - 68)
-  const slotH = 38
+  const slotW = Math.min(164, panelW - 118)
+  const slotH = 28
   const slotX = cx - slotW / 2
-  const slotY = Math.min(panelY + panelH - 188, panelY + 242)
+  const slotY = Math.min(panelY + panelH - 176, panelY + 220)
 
-  const cardW = Math.min(96, panelW * 0.28)
-  const cardH = Math.round(cardW * 1.42)
+  const cardW = Math.min(58, panelW * 0.18)
+  const cardH = Math.round(cardW * 1121 / 671)
   const cardX = cx - cardW / 2
 
   // 只登记点击区，不画系统按钮外观。
-  buttons.push({ id: 'tarot_slot', x: slotX - 10, y: slotY - 30, w: slotW + 20, h: cardH + 118 })
+  buttons.push({ id: 'tarot_slot', x: slotX - 10, y: slotY - 24, w: slotW + 20, h: cardH + 88 })
 
-  drawText('美食塔罗牌', cx, slotY - 28, 16, '#111', 'center', 'bold')
-  drawText('点一下，今天吃什么', cx, slotY - 10, 11, '#777', 'center', 'bold')
+  drawText(t('tarotTitle'), cx, slotY - 26, 14, '#111', 'center', 'bold')
+  drawText(t('tarotHint'), cx, slotY - 10, 10, '#777', 'center', 'bold')
 
   let progress = tarotState === 2 ? 1 : 0
   if (tarotState === 1) {
@@ -1975,23 +2040,24 @@ function drawTarotSlot(panelX, panelY, panelW, panelH) {
     ctx.save()
     ctx.beginPath()
     // 从出票口下沿开始裁切：上半部分永远像是在黑洞里。
-    ctx.rect(cardX - 8, slotY + slotH * 0.52, cardW + 16, cardH + 28)
+    ctx.rect(cardX - 6, slotY + slotH * 0.48, cardW + 12, cardH + 22)
     ctx.clip()
-    drawTarotMiniCard(tarotCard, cardX, cardY, cardW, cardH)
+    drawCard(tarotCard, cardX, cardY, cardW, cardH)
     ctx.restore()
   }
 
   // 黑色出票口最后画，压住卡牌上端。
-  drawRoundRect(slotX + 4, slotY + 7, slotW, slotH, 18, 'rgba(0,0,0,0.18)', null, 0)
-  drawRoundRect(slotX, slotY, slotW, slotH, 18, '#111', '#111', 2)
-  drawRoundRect(slotX + 18, slotY + 12, slotW - 36, 10, 5, '#2A2A2A', null, 0)
-  drawText(tarotState === 0 ? '点击出票' : '正在出票', cx, slotY + 9, 13, '#FFE169', 'center', 'bold')
+  drawRoundRect(slotX + 3, slotY + 5, slotW, slotH, 14, 'rgba(0,0,0,0.18)', null, 0)
+  drawRoundRect(slotX, slotY, slotW, slotH, 14, '#111', '#111', 2)
+  drawRoundRect(slotX + 16, slotY + 9, slotW - 32, 7, 4, '#2A2A2A', null, 0)
+  drawText(tarotState === 0 ? t('tarotButton') : t('tarotLoading'), cx, slotY + 6, 11, '#FFE169', 'center', 'bold')
 
   if (tarotState === 2 && tarotCard) {
-    const textY = slotY + slotH + cardH + 18
-    drawRoundRect(cx - 104, textY - 7, 208, 34, 17, '#111', null, 0)
-    drawText(`你今天适合吃${tarotCard.name}`, cx, textY + 1, 13, '#FFE169', 'center', 'bold')
-    drawText('再点一次重新抽', cx, textY + 38, 10, '#777', 'center', 'bold')
+    const textY = slotY + slotH + cardH + 12
+    const resultText = `${t('tarotResultPrefix')}${tarotCard.name}`
+    drawRoundRect(cx - 94, textY - 5, 188, 28, 14, '#111', null, 0)
+    drawText(resultText, cx, textY + 1, 11, '#FFE169', 'center', 'bold')
+    drawText(t('tarotAgain'), cx, textY + 30, 9, '#777', 'center', 'bold')
   }
 }
 
@@ -2025,41 +2091,30 @@ function drawHome() {
   drawRoundRect(panelX, panelY, panelW, panelH, 28, '#FFFFFF', '#111', 4)
 
   if (!rulesExpanded) {
-    drawText('利禄卡', W / 2, panelY + 12, 44, '#111', 'center', 'bold')
-    drawText('LILU CARDS', W / 2, panelY + 66, 14, '#555', 'center', 'bold')
+    drawText(t('title'), W / 2, panelY + 12, lang === 'en' ? 40 : 44, '#111', 'center', 'bold')
+    drawText(t('subtitle'), W / 2, panelY + 66, 14, '#555', 'center', 'bold')
 
     drawRoundRect(W / 2 - 92, panelY + 92, 184, 36, 18, '#111', null, 0)
-    drawText('卡路里外卖对战', W / 2, panelY + 101, 15, '#FFE169', 'center', 'bold')
+    drawText(t('tagline'), W / 2, panelY + 101, lang === 'en' ? 13 : 15, '#FFE169', 'center', 'bold')
 
     // v6.4：主视觉文案整体上移，为黑色出票口留出空间。
-    drawText('我的嘴，就是秤。', W / 2, panelY + 142, 23, '#111', 'center', 'bold')
-    drawText('单机 / 开房间 / 加入房间', W / 2, panelY + 172, 13, '#555', 'center', 'bold')
+    drawText(t('slogan'), W / 2, panelY + 138, lang === 'en' ? 21 : 23, '#111', 'center', 'bold')
+    drawText(t('modes'), W / 2, panelY + 166, 13, '#555', 'center', 'bold')
 
     drawTarotSlot(panelX, panelY, panelW, panelH)
 
     const ruleBtnW = Math.min(panelW - 64, 210)
-    addButton('rules_toggle', '查看游戏规则', W / 2 - ruleBtnW / 2, panelY + panelH - 64, ruleBtnW, 42, '#FFFFFF', '#111', 16)
+    addButton('rules_toggle', t('rules'), W / 2 - ruleBtnW / 2, panelY + panelH - 64, ruleBtnW, 42, '#FFFFFF', '#111', 16)
   } else {
-    drawText('游戏规则', panelX + 24, panelY + 20, 28, '#111', 'left', 'bold')
-    addButton('rules_toggle', '收起', panelX + panelW - 88, panelY + 18, 58, 34, '#111', '#fff', 14)
+    drawText(t('rulesTitle'), panelX + 24, panelY + 20, 28, '#111', 'left', 'bold')
+    addButton('rules_toggle', t('close'), panelX + panelW - 88, panelY + 18, 58, 34, '#111', '#fff', 14)
 
     const viewX = panelX + 24
     const viewY = panelY + 66
     const viewW = panelW - 48
     const viewH = panelH - 88
 
-    const lines = [
-      '1. 双方准备后开局，早餐 / 午餐 / 晚餐 / 夜宵共 4 小局。',
-      '2. 每局先进入起手阶段，双方各抽 2 张：第 1 张是底牌，第 2 张是明牌；起手不消耗外卖次数。',
-      '3. 早餐起手完成后随机先手；午餐自动换另一方先手；晚餐换回早餐先手方。',
-      '4. 点餐阶段轮流操作。轮到你时，可选择 荤 / 素 / 主食 / 甜点，或点击收手。',
-      '5. 对方只有底牌未知，其余明牌可见；对方热量显示为「? + 明牌热量」。',
-      '6. 爆牌不会立刻摊牌，你还可以继续点外卖迷惑对方；只有主动开吃才结束。',
-      '7. 双方都收手后进入本餐结算，公开双方全部外卖、热量、爆牌情况和胜负。',
-      '8. 夜宵不分先后，双方用剩余外卖次数选择搭配；双方选完后点击展示夜宵再结算。',
-      '9. 四局结束后进入今日结算，比分更高者获胜；平局则双方都很会吃。',
-      '10. 联机结束后不会退出房间，双方可继续准备下一整局。'
-    ]
+    const lines = t('rulesLines')
 
     ctx.save()
     ctx.beginPath()
@@ -2084,17 +2139,17 @@ function drawHome() {
       const barH = Math.max(28, viewH * viewH / (contentH || viewH))
       const barY = viewY + (viewH - barH) * (rulesScroll / rulesMaxScroll)
       drawRoundRect(viewX + viewW + 6, barY, 4, barH, 3, '#111', null, 0)
-      drawText('上下滑动', W / 2, panelY + panelH - 18, 10, '#777', 'center', 'bold')
+      drawText(t('swipe'), W / 2, panelY + panelH - 18, 10, '#777', 'center', 'bold')
     }
   }
 
   const bottomY = H - SAFE_BOTTOM - 154
-  addButton('single_start', '单机游戏', 32, bottomY, W - 64, 54, '#111', '#fff', 22)
+  addButton('single_start', t('solo'), 32, bottomY, W - 64, 54, '#111', '#fff', 22)
 
   const gap = 12
   const halfW = (W - 64 - gap) / 2
-  addButton('online_create', '开房间', 32, bottomY + 68, halfW, 54, '#FFE169', '#111', 20)
-  addButton('online_join', '加入房间', 32 + halfW + gap, bottomY + 68, halfW, 54, '#9EDBFF', '#111', 20)
+  addButton('online_create', t('create'), 32, bottomY + 68, halfW, 54, '#FFE169', '#111', 20)
+  addButton('online_join', t('join'), 32 + halfW + gap, bottomY + 68, halfW, 54, '#9EDBFF', '#111', 20)
 
   if (message) wrapText(message, 32, H - SAFE_BOTTOM - 24, W - 64, 14, 11, '#E94335', 'bold', 1)
 
@@ -2104,7 +2159,7 @@ function drawHome() {
 
 function drawHomeMiniButton() {
   if (appMode !== 'single') return
-  addButton('home', '首页', W - 74, SAFE_TOP + 2, 54, 30, '#FFFFFF', '#111', 13)
+  addButton('home', t('home'), W - 74, SAFE_TOP + 2, 54, 30, '#FFFFFF', '#111', 13)
 }
 
 function drawTopBadge() {
@@ -2497,24 +2552,24 @@ function drawDayResult() {
   const selfPoint = getFinalPoint(game, selfId)
   const oppPoint = getFinalPoint(game, oppId)
 
-  let finalText = '平局'
-  let finalSubText = '双方今天吃得不相上下'
+  let finalText = t('finalDraw')
+  let finalSubText = t('finalDrawSub')
 
   if (selfPoint > oppPoint) {
-    finalText = '恭喜你赢了！'
-    finalSubText = '你赢得了这一整局'
+    finalText = t('finalWin')
+    finalSubText = t('finalWinSub')
   } else if (selfPoint < oppPoint) {
-    finalText = '你输了'
-    finalSubText = '对方赢得了这一整局'
+    finalText = t('finalLose')
+    finalSubText = t('finalLoseSub')
   }
 
-  drawText('今日结算', 24, SAFE_TOP + 8, 30, '#111', 'left', 'bold')
+  drawText(t('finalResult'), 24, SAFE_TOP + 8, 30, '#111', 'left', 'bold')
 
   drawRoundRect(20, SAFE_TOP + 48, W - 40, 108, 22, '#FFFFFF', '#111', 3)
   drawText(finalText, W / 2, SAFE_TOP + 62, 28, selfPoint > oppPoint ? '#E94335' : '#111', 'center', 'bold')
   drawText(finalSubText, W / 2, SAFE_TOP + 96, 13, '#555', 'center', 'bold')
-  drawText(`你 ${selfPoint} : ${oppPoint} 对手`, W / 2, SAFE_TOP + 118, 22, '#111', 'center', 'bold')
-  drawText(`全日热量：你 ${getDayTotalKcal(game, selfId)} kcal｜对手 ${getDayTotalKcal(game, oppId)} kcal`, W / 2, SAFE_TOP + 142, 11, '#555', 'center', 'bold')
+  drawText(`${t('you')} ${selfPoint} : ${oppPoint} ${t('rival')}`, W / 2, SAFE_TOP + 118, 22, '#111', 'center', 'bold')
+  drawText(`${t('dayKcal')}：${t('you')} ${getDayTotalKcal(game, selfId)} kcal｜${t('rival')} ${getDayTotalKcal(game, oppId)} kcal`, W / 2, SAFE_TOP + 142, 11, '#555', 'center', 'bold')
 
   const results = safeArray(game.mealResults)
   let y = SAFE_TOP + 170
@@ -2530,7 +2585,7 @@ function drawDayResult() {
     drawText(meal.name, 34, y + 10, 17, '#111', 'left', 'bold')
 
     if (!res) {
-      drawText('无记录', W / 2, y + 12, 13, '#777', 'center', 'bold')
+      drawText(t('noRecord'), W / 2, y + 12, 13, '#777', 'center', 'bold')
       y += blockH + 8
       continue
     }
@@ -2545,13 +2600,13 @@ function drawDayResult() {
     const oppP = getMealPoint(game, oppId, i)
 
     drawText(`${selfP}:${oppP}`, W - 34, y + 10, 16, '#E94335', 'right', 'bold')
-    drawText(`你 ${selfRaw}${selfBusted ? '爆' : ''}｜对手 ${oppRaw}${oppBusted ? '爆' : ''}`, 92, y + 12, 12, '#333', 'left', 'bold')
+    drawText(`${t('you')} ${selfRaw}${selfBusted ? '爆' : ''}｜${t('rival')} ${oppRaw}${oppBusted ? '爆' : ''}`, 92, y + 12, 12, '#333', 'left', 'bold')
 
     const cardY = y + 34
     const colW = (W - 76) / 2
-    drawText('对方', 34, cardY, 10, '#777', 'left', 'bold')
+    drawText(t('rival'), 34, cardY, 10, '#777', 'left', 'bold')
     drawTinyCards(oppCards, 34, cardY + 14, colW, blockH - 50, 26)
-    drawText('你', 42 + colW, cardY, 10, '#777', 'left', 'bold')
+    drawText(t('you'), 42 + colW, cardY, 10, '#777', 'left', 'bold')
     drawTinyCards(selfCards, 42 + colW, cardY + 14, colW, blockH - 50, 26)
 
     y += blockH + 8
@@ -2559,11 +2614,11 @@ function drawDayResult() {
 
   if (appMode === 'online') {
     const ready = game.replayReady || { p1: false, p2: false }
-    const statusText = `下一整局准备：你 ${ready[selfId] ? '已准备' : '未准备'}｜对方 ${ready[oppId] ? '已准备' : '未准备'}`
+    const statusText = `${t('nextReady')}：${t('you')} ${ready[selfId] ? t('ready') : t('notReady')}｜${t('rival')} ${ready[oppId] ? t('ready') : t('notReady')}`
     drawText(statusText, W / 2, H - SAFE_BOTTOM - 92, 13, '#E94335', 'center', 'bold')
-    addButton(ready[selfId] ? 'noop' : 'replay_ready', ready[selfId] ? '已准备，等待对方' : '准备下一局', 24, H - SAFE_BOTTOM - 72, W - 48, 58, '#111', '#fff', 22)
+    addButton(ready[selfId] ? 'noop' : 'replay_ready', ready[selfId] ? t('waitingRival') : t('readyNext'), 24, H - SAFE_BOTTOM - 72, W - 48, 58, '#111', '#fff', 22)
   } else {
-    addButton('restart_home', '返回首页', 24, H - SAFE_BOTTOM - 72, W - 48, 58, '#111', '#fff', 22)
+    addButton('restart_home', t('backHome'), 24, H - SAFE_BOTTOM - 72, W - 48, 58, '#111', '#fff', 22)
   }
 }
 
@@ -2654,6 +2709,11 @@ async function handleAction(id) {
 
     if (id === 'music_toggle') {
       toggleBgm()
+      return
+    }
+
+    if (id === 'lang_toggle') {
+      toggleLang()
       return
     }
 
