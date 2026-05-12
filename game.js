@@ -143,46 +143,16 @@ const I18N = {
     statusBust: '爆牌', statusSafe: '未爆牌', statusStood: '已收手', statusOrdering: '点餐中', statusOpening: '起手中', statusWatching: '观察中',
     mealPoint: '本餐点数', combo: '组合', comboNone: '无组合', comboBustNone: '爆牌不触发组合', yourOrders: '你的外卖', rivalOrders: '对方外卖', quoteWin: '你很会吃啊，小朋友。', quoteLose: '你会吃有个屁用。', quoteDraw: '你俩都挺能装。', youWonMeal: '本餐你赢了', youLostMeal: '本餐你输了', mealDraw: '本餐平局',
     rulesLines: [
-      '🎯 胜负目标',
-      '每餐胜利 = 1分。一天共 4 餐，最终分数高者获胜。',
-
-      '🔁 游戏流程',
-      '游戏分为：早餐 → 午餐 → 晚餐 → 夜宵。',
-      '每餐你可以重复选择：点外卖，或开吃。',
-      '当双方都开吃后，自动结算本餐胜负。',
-
-      '⚠️ 爆牌规则',
-      '每餐都有一个警戒线。',
-      '总热量超过警戒线 = 爆牌。',
-      '爆牌者本餐直接输。',
-      '爆牌这一餐的热量不会计入今日总热量。',
-
-      '👀 信息规则',
-      '对方第一张是暗牌。',
-      '后续抽的都是明牌。',
-      '对方热量显示为：？ + 明牌热量。',
-
-      '🧠 卡牌特性',
-      '每张牌都有不同热量。',
-      '有低热量补分牌，也有高热量风险牌。',
-      '刺客牌看起来安全，但容易让你意外爆牌。',
-
-      '🧩 牌型系统',
-      '牌型仅在不爆牌时生效。',
-      '中级牌型奖励：+1张荤牌计入今日总热量。',
-      '双拼套餐：任意两类 ≥2张。',
-      '偏科套餐：任意一类 ≥3张。',
-      '高级牌型奖励：本餐直接+1分。',
-      '满汉大餐：四类齐全且 ≥5张。',
-      '卡线大师：总热量刚好等于警戒线。',
-      '每餐只触发最高级一个牌型。',
-
-      '🌙 夜宵规则',
-      '夜宵会使用剩余所有外卖次数。',
-      '一次性点完，然后统一结算。',
-
-      '✅ 一句话总结',
-      '在不爆的前提下，比对方更接近极限。'
+      '1. 双方准备后开局，早餐 / 午餐 / 晚餐 / 夜宵共 4 小局。',
+      '2. 每局先进入起手阶段，双方各抽 2 张：第 1 张是底牌，第 2 张是明牌；起手不消耗外卖次数。',
+      '3. 早餐起手完成后随机先手；午餐自动换另一方先手；晚餐换回早餐先手方。',
+      '4. 点餐阶段轮流操作。轮到你时，可选择 荤 / 素 / 主食 / 甜点，或点击收手。',
+      '5. 对方只有底牌未知，其余明牌可见；对方热量显示为「? + 明牌热量」。',
+      '6. 爆牌不会立刻摊牌，你还可以继续点外卖迷惑对方；只有主动开吃才结束。',
+      '7. 双方都收手后进入本餐结算，公开双方全部外卖、热量、爆牌情况和胜负。',
+      '8. 夜宵不分先后，双方用剩余外卖次数选择搭配；双方选完后点击展示夜宵再结算。',
+      '9. 四局结束后进入今日结算，比分更高者获胜；平局则双方都很会吃。',
+      '10. 联机结束后不会退出房间，双方可继续准备下一整局。'
     ]
   },
   en: {
@@ -203,46 +173,16 @@ const I18N = {
     statusBust: 'Bust', statusSafe: 'Safe', statusStood: 'Stopped', statusOrdering: 'Ordering', statusOpening: 'Opening', statusWatching: 'Watching',
     mealPoint: 'Meal points', combo: 'Combo', comboNone: 'No combo', comboBustNone: 'Bust: no combo', yourOrders: 'Your Orders', rivalOrders: 'Rival Orders', quoteWin: 'You really know how to eat.', quoteLose: 'Eating well did nothing.', quoteDraw: 'Both of you can bluff.', youWonMeal: 'You won this meal', youLostMeal: 'You lost this meal', mealDraw: 'Meal Draw',
     rulesLines: [
-      '🎯 Goal',
-      'Winning a meal gives 1 point. There are 4 meals in a day. Higher final score wins.',
-
-      '🔁 Game Flow',
-      'The day has 4 meals: Breakfast → Lunch → Dinner → Night Snack.',
-      'During each meal, you may keep ordering cards or choose Eat to stop.',
-      'When both players choose Eat, the meal is settled automatically.',
-
-      '⚠️ Bust Rule',
-      'Each meal has a calorie limit.',
-      'Going over the limit means Bust.',
-      'If you bust, you lose that meal immediately.',
-      'Calories from a busted meal do not count toward your daily total.',
-
-      '👀 Information',
-      'The rival’s first card is hidden.',
-      'All later cards are visible.',
-      'The rival’s calories show as: ? + visible calories.',
-
-      '🧠 Card Traits',
-      'Each card has a different calorie value.',
-      'Some cards are low-calorie fillers, while others are high-risk cards.',
-      'Assassin cards may look safe, but can unexpectedly make you bust.',
-
-      '🧩 Combo System',
-      'Combos only activate if you do not bust.',
-      'Mid combo reward: +1 Meat card added to your daily total.',
-      'Double Combo: any two categories have at least 2 cards each.',
-      'One-Type Combo: any one category has at least 3 cards.',
-      'High combo reward: +1 point for this meal.',
-      'Full Feast: all 4 categories appear and you have at least 5 cards.',
-      'Limit Master: your calories exactly equal the limit.',
-      'Only the highest combo can trigger each meal.',
-
-      '🌙 Night Snack',
-      'Night Snack uses all remaining order chances.',
-      'Choose them all at once, then reveal and settle.',
-
-      '✅ Summary',
-      'Do not bust. Get closer to the limit than your rival.'
+      '1. The game has 4 meals: Breakfast / Lunch / Dinner / Night Snack.',
+      '2. Each meal starts with 2 opening cards. The first is your hidden card. Opening cards do not cost order chances.',
+      '3. Breakfast starter is random. Lunch swaps starter. Dinner swaps back.',
+      '4. On your turn, choose Meat / Veg / Staple / Dessert, or stop and eat.',
+      "5. The rival\'s hidden card is unknown. Other cards are visible.",
+      '6. Busting does not reveal immediately. You may still bluff until you stop.',
+      '7. When both players stop, all cards are revealed and the meal is settled.',
+      '8. Night Snack uses remaining order chances. Both players pick first, then reveal together.',
+      '9. After 4 meals, final score decides the winner.',
+      '10. Online rooms stay open for another full round.'
     ]
   }
 }
@@ -2264,8 +2204,8 @@ function drawHome() {
   const bottomButtonsH = 172
   const panelH = Math.max(360, H - panelY - bottomButtonsH - SAFE_BOTTOM - 18)
 
-  drawRoundRect(-40, H - 220, 160, 160, 36, '#A9F0D1', null, 0)
-  drawRoundRect(W - 92, SAFE_TOP + 90, 130, 130, 32, '#FF9BB4', null, 0)
+  drawPolkaDots('#A9F0D1', 18, H - 260, W - 18, H - 28, 7, 28)
+  drawPolkaDots('#FF9BB4', 18, SAFE_TOP + 78, W - 18, SAFE_TOP + 260, 7, 28)
 
   drawRoundRect(panelX, panelY, panelW, panelH, 28, '#FFFFFF', '#111', 4)
 
