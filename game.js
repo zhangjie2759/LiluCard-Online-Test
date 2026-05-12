@@ -2261,7 +2261,7 @@ function drawHome() {
 
 function drawHomeMiniButton() {
   if (appMode !== 'single') return
-  addButton('home', t('home'), W - 74, SAFE_TOP + 2, 54, 30, '#FFFFFF', '#111', 13)
+ addButton('home', t('home'), W - 74, SAFE_TOP - 8, 54, 30, '#FFFFFF', '#111', 13)
 }
 
 function drawTopBadge() {
