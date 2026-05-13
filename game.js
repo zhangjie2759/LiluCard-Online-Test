@@ -1,5 +1,5 @@
 // game.js
-// 利禄卡 Online v2.9 BGM 版：加入循环背景音乐
+// 利禄卡 Online v7.3 联机防连点+夜宵兜底修复版
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -738,6 +738,20 @@ function enterNightPicking(g) {
   g.phase = 'night_picking'
   g.turn = null
   resetMealState(g)
+
+  const p1Remain = getRemainingOrders(g, 'p1')
+  const p2Remain = getRemainingOrders(g, 'p2')
+
+  // v7.3：夜宵边界兜底。
+  // 如果双方都没有剩余外卖次数，不再停在 night_picking 等待玩家操作，直接以 0 kcal 结算夜宵。
+  if (p1Remain <= 0 && p2Remain <= 0) {
+    g.message = lang === 'en'
+      ? 'Night Snack skipped: both players have no order chances left.'
+      : '夜宵跳过：双方都没有剩余外卖次数，直接结算夜宵。'
+    revealNightAndSettle(g)
+    return
+  }
+
   g.message = lang === 'en' ? 'Night Snack: both players pick with remaining order chances' : '夜宵开始：不分先后，双方按剩余外卖次数选择搭配'
 }
 
@@ -1431,10 +1445,23 @@ function runPostSyncTransitions(g) {
       settleMeal(g)
     }
   } else if (g.phase === 'night_picking') {
-    if (getRemainingOrders(g, 'p1') <= 0 && getRemainingOrders(g, 'p2') <= 0) {
-      g.phase = 'night_ready'
-      g.turn = null
-      g.message = lang === 'en' ? 'Both picked Night Snack. Tap reveal.' : '双方夜宵已选完，点击展示夜宵'
+    const p1Remain = getRemainingOrders(g, 'p1')
+    const p2Remain = getRemainingOrders(g, 'p2')
+    const p1NightCount = safeArray(g.players.p1.nightChoices).length
+    const p2NightCount = safeArray(g.players.p2.nightChoices).length
+
+    if (p1Remain <= 0 && p2Remain <= 0) {
+      if (p1NightCount <= 0 && p2NightCount <= 0) {
+        // v7.3：双方都没留夜宵次数时，自动结算，避免没有按钮可点而卡住。
+        g.message = lang === 'en'
+          ? 'Night Snack skipped: both players have no order chances left.'
+          : '夜宵跳过：双方都没有剩余外卖次数，直接结算夜宵。'
+        revealNightAndSettle(g)
+      } else {
+        g.phase = 'night_ready'
+        g.turn = null
+        g.message = lang === 'en' ? 'Both picked Night Snack. Tap reveal.' : '双方夜宵已选完，点击展示夜宵'
+      }
     }
   } else if (g.phase === 'meal_result') {
     if (g.nextReady && g.nextReady.p1 && g.nextReady.p2) {
@@ -1472,7 +1499,7 @@ async function writeFullOnlineGame(nextGame) {
 
   game = nextGame
   localGameActionSeq = nextGame.actionSeq
-  pendingWriteUntil = Date.now() + 900
+  pendingWriteUntil = Date.now() + 1600
   requestRender()
 
   await window.LiluOnline.updateRoom(roomId, {
@@ -1494,7 +1521,7 @@ async function saveOnlineGame() {
 
   game = local
   localGameActionSeq = seq
-  pendingWriteUntil = Date.now() + 900
+  pendingWriteUntil = Date.now() + 1600
   requestRender()
 
   // 结算、展示夜宵、进入下一餐这类“公共状态”动作，整包写入。
@@ -2588,7 +2615,13 @@ function drawGameScreen() {
 
 
 function applyRevealNight(g) {
-  if (g.phase !== 'night_ready') return
+  if (g.phase !== 'night_ready' && g.phase !== 'night_picking') return
+
+  if (g.phase === 'night_picking') {
+    const p1Remain = getRemainingOrders(g, 'p1')
+    const p2Remain = getRemainingOrders(g, 'p2')
+    if (p1Remain > 0 || p2Remain > 0) return
+  }
 
   revealNightAndSettle(g)
   g.actionSeq += 1
@@ -2873,13 +2906,15 @@ async function handleAction(id) {
   const lockedActions = ['draw_meat', 'draw_veg', 'draw_staple', 'draw_dessert', 'stand', 'reveal_night', 'next', 'replay_ready', 'ready']
   const shouldLock = appMode === 'online' && lockedActions.includes(id)
 
-  if (shouldLock && onlineActionLocked && Date.now() < onlineActionLockUntil) {
+  // v7.3：联机防连点。
+  // 数据库写入/回读还没完成时，直接忽略下一次点牌，避免旧快照覆盖新状态导致卡死。
+  if (shouldLock && (onlineActionLocked || Date.now() < onlineActionLockUntil || Date.now() < pendingWriteUntil)) {
     return
   }
 
   if (shouldLock) {
     onlineActionLocked = true
-    onlineActionLockUntil = Date.now() + 900
+    onlineActionLockUntil = Date.now() + 1800
   }
 
   pendingActionId = id
@@ -2981,7 +3016,7 @@ async function handleAction(id) {
     if (shouldLock) {
       setTimeout(() => {
         onlineActionLocked = false
-      }, 360)
+      }, 180)
     }
   }
 }
