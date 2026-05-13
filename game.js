@@ -406,10 +406,18 @@ function drawMusicButton() {
   const h = 22
   const font = 9
   const musicW = lang === 'en' ? 64 : 50
+  const langW = 32
+  const tutorialW = lang === 'en' ? 48 : 40
 
   addButton('music_toggle', label, 8, y, musicW, h, '#FFFFFF', '#111', font)
-  addButton('lang_toggle', t('langBtn'), 12 + musicW, y, 32, h, '#FFFFFF', '#111', font)
+  addButton('lang_toggle', t('langBtn'), 12 + musicW, y, langW, h, '#FFFFFF', '#111', font)
+
+  // v7.6：首页增加教程入口，和音乐/中英按钮同一水平线、同一高度。
+  if (appMode === 'home') {
+    addButton('tutorial_btn', lang === 'en' ? 'Guide' : '教程', 16 + musicW + langW, y, tutorialW, h, '#FFFFFF', '#111', font)
+  }
 }
+
 
 
 // =========================
@@ -2884,6 +2892,16 @@ function startTutorialIfNeeded() {
   tutorialStep = 0
 }
 
+
+function startTutorialManual() {
+  appMode = 'single'
+  myPlayerId = 'p1'
+  game = createGame('single')
+  aiOpeningIfNeeded(game)
+  tutorialOn = true
+  tutorialStep = 0
+}
+
 function finishTutorial() {
   tutorialOn = false
   tutorialStep = 0
@@ -2906,95 +2924,113 @@ function getActionButtonFocus(ids) {
   const minY = Math.min(...list.map(b => b.y))
   const maxX = Math.max(...list.map(b => b.x + b.w))
   const maxY = Math.max(...list.map(b => b.y + b.h))
+  const pad = 4
   return {
-    x: Math.max(8, minX - 8),
-    y: Math.max(8, minY - 8),
-    w: Math.min(W - 16, maxX - minX + 16),
-    h: maxY - minY + 16
+    x: Math.max(8, minX - pad),
+    y: Math.max(8, minY - pad),
+    w: Math.min(W - 16, maxX - minX + pad * 2),
+    h: maxY - minY + pad * 2
+  }
+}
+
+function getTutorialGameLayout() {
+  const topY = Math.max(SAFE_TOP + 34, 34) + (appMode === 'online' ? 18 : 0)
+  const actionY = H - SAFE_BOTTOM - 94
+  const centerH = 80
+  const gap = 8
+  let zoneH = Math.floor((actionY - topY - centerH - gap * 2 - 12) / 2)
+  zoneH = Math.max(160, Math.min(228, zoneH))
+
+  const opponentY = topY
+  const centerY = opponentY + zoneH + gap
+  const selfY = centerY + centerH + gap
+
+  return {
+    opponent: { x: 20, y: opponentY + 4, w: W - 40, h: zoneH - 8 },
+    center: { x: 20, y: centerY + 4, w: W - 40, h: centerH - 8 },
+    limit: { x: Math.max(20, W * 0.54), y: centerY + 18, w: Math.min(W * 0.38, W - Math.max(20, W * 0.54) - 28), h: 32 },
+    self: { x: 20, y: selfY + 4, w: W - 40, h: zoneH - 8 }
   }
 }
 
 function getTutorialStep() {
+  const layout = getTutorialGameLayout()
   const drawActions = ['draw_meat', 'draw_veg', 'draw_staple', 'draw_dessert']
-  const bottomFocus = getActionButtonFocus(drawActions) || { x: 24, y: H - SAFE_BOTTOM - 90, w: W - 48, h: 70 }
-  const standFocus = getActionButtonFocus(['stand']) || { x: W - 128, y: H - SAFE_BOTTOM - 90, w: 104, h: 58 }
-  const nextFocus = getActionButtonFocus(['next']) || { x: 32, y: H - SAFE_BOTTOM - 78, w: W - 64, h: 56 }
-  const revealFocus = getActionButtonFocus(['reveal_night']) || { x: 32, y: H - SAFE_BOTTOM - 78, w: W - 64, h: 56 }
+  const bottomFocus = getActionButtonFocus(drawActions) || { x: 16, y: H - SAFE_BOTTOM - 84, w: Math.max(210, W * 0.5), h: 70 }
+  const standFocus = getActionButtonFocus(['stand']) || { x: W * 0.54, y: H - SAFE_BOTTOM - 84, w: W * 0.42, h: 70 }
 
   const steps = [
     {
-      text: tutorialText('目标：每餐在不爆牌的前提下，比对手吃得更多。', 'Goal: eat more than your rival without busting.'),
-      sub: tutorialText('先看警戒线，超过它就爆牌。', 'Watch the limit. Going over it means bust.'),
-      focus: { x: W * 0.22, y: H * 0.39, w: W * 0.56, h: 72 }
+      title: tutorialText('大局目标', 'Full-game goal'),
+      text: tutorialText(
+        '一天有4餐：早餐、午餐、晚餐、夜宵。\n每餐是一小局，4小局结束后结算一整局。\n目标是在不爆牌的前提下，比对手吃得更多。',
+        'A full game has 4 meals: Breakfast, Lunch, Dinner, and Night Snack.\nEach meal is one round. After 4 rounds, the full game is settled.\nYour goal is to eat more than your rival without busting.'
+      ),
+      focus: layout.center
     },
     {
-      text: tutorialText('下半区是你自己的外卖区。', 'The lower area is your order zone.'),
-      sub: tutorialText('你的牌和热量都会显示在这里。', 'Your cards and calories are shown here.'),
-      focus: { x: 14, y: H * 0.52, w: W - 28, h: H * 0.25 }
+      title: tutorialText('警戒线', 'Calorie limit'),
+      text: tutorialText(
+        '每餐都有警戒线。\n超过警戒线就爆牌，本餐热量不计入总分。',
+        'Each meal has a calorie limit.\nGoing over the limit means Bust. That meal’s calories do not count toward your total.'
+      ),
+      focus: layout.limit
     },
     {
-      text: tutorialText('上半区是对手。', 'The upper area is your rival.'),
-      sub: tutorialText('对手第一张是暗牌，所以总热量会有未知部分。', 'The rival’s first card is hidden, so part of their calories is unknown.'),
-      focus: { x: 14, y: SAFE_TOP + 32, w: W - 28, h: H * 0.25 }
+      title: tutorialText('对手区域', 'Rival area'),
+      text: tutorialText(
+        '上半区是对手。\n对手第一张是暗牌，所以你只能看到「? + 明牌热量」。',
+        'The top area is your rival.\nTheir first card is hidden, so you only see “? + visible calories”.'
+      ),
+      focus: layout.opponent
     },
     {
-      text: tutorialText('先抽第1张起手牌。', 'Draw your first opening card.'),
-      sub: tutorialText('点下面任意一种外卖分类。', 'Tap any food category below.'),
+      title: tutorialText('自己区域', 'Your area'),
+      text: tutorialText(
+        '下半区是你。\n你的外卖牌和热量都会显示在这里。',
+        'The bottom area is yours.\nYour cards and calories are shown here.'
+      ),
+      focus: layout.self
+    },
+    {
+      title: tutorialText('四个外卖按钮', 'Four food buttons'),
+      text: tutorialText(
+        '荤、素、主食、甜点代表四类外卖。\n不同类别热量区间不同，选择类别就是你的策略。',
+        'Meat, Veg, Staple, and Dessert are the four food categories.\nEach category has different calorie ranges. Choosing a category is your strategy.'
+      ),
+      focus: bottomFocus
+    },
+    {
+      title: tutorialText('起手阶段', 'Opening cards'),
+      text: tutorialText(
+        '每餐开始先抽2张起手牌。\n起手牌不消耗今日外卖次数。',
+        'Each meal starts with 2 opening cards.\nOpening cards do not cost your daily order chances.'
+      ),
+      focus: bottomFocus
+    },
+    {
+      title: tutorialText('点餐阶段', 'Ordering phase'),
+      text: tutorialText(
+        '起手后继续点外卖会消耗今日外卖次数。\n越接近警戒线越容易赢，但也越容易爆牌。',
+        'After opening cards, each order uses one daily chance.\nThe closer you get to the limit, the better — but also riskier.'
+      ),
+      focus: bottomFocus
+    },
+    {
+      title: tutorialText('开吃 / 收手', 'Eat / Stop'),
+      text: tutorialText(
+        '觉得差不多就点「开吃」。\n双方都开吃后，本餐结算。',
+        'Tap “Eat” when you want to stop.\nWhen both players stop, the meal is settled.'
+      ),
+      focus: standFocus
+    },
+    {
+      title: tutorialText('夜宵规则', 'Night Snack'),
+      text: tutorialText(
+        '夜宵比较特殊：会一次性用完剩余外卖次数。\n先选择搭配，再统一揭晓。',
+        'Night Snack is special: it uses all remaining order chances at once.\nPick your mix first, then reveal together.'
+      ),
       focus: bottomFocus,
-      actions: drawActions
-    },
-    {
-      text: tutorialText('再抽第2张起手牌。', 'Draw your second opening card.'),
-      sub: tutorialText('起手牌不消耗今日外卖次数。', 'Opening cards do not cost order chances.'),
-      focus: bottomFocus,
-      actions: drawActions
-    },
-    {
-      text: tutorialText('现在开始正式点餐。', 'Now the meal begins.'),
-      sub: tutorialText('继续点外卖会增加热量，也会消耗外卖次数。', 'Ordering adds calories and uses an order chance.'),
-      focus: bottomFocus,
-      actions: drawActions
-    },
-    {
-      text: tutorialText('觉得差不多就点“开吃”。', 'Tap Eat when you want to stop.'),
-      sub: tutorialText('双方都开吃后，本餐自动结算。', 'When both players stop, the meal is settled.'),
-      focus: standFocus,
-      actions: ['stand']
-    },
-    {
-      text: tutorialText('这里会显示本餐结算。', 'This screen shows the meal result.'),
-      sub: tutorialText('爆牌的这一餐不会计入今日总热量。', 'A busted meal does not count toward the day total.'),
-      focus: { x: 24, y: SAFE_TOP + 70, w: W - 48, h: H * 0.42 }
-    },
-    {
-      text: tutorialText('确认后进入下一餐。', 'Confirm to enter the next meal.'),
-      sub: tutorialText('午餐开始后，你会继续练习暗牌和轮流点餐。', 'In Lunch, you will keep practicing hidden cards and turns.'),
-      focus: nextFocus,
-      actions: ['next']
-    },
-    {
-      text: tutorialText('午餐也先抽2张起手牌。', 'Lunch also starts with 2 opening cards.'),
-      sub: tutorialText('对手暗牌会让判断更有博弈感。', 'The rival’s hidden card adds bluffing.'),
-      focus: bottomFocus,
-      actions: drawActions
-    },
-    {
-      text: tutorialText('再抽一张，完成午餐起手。', 'Draw one more to finish the Lunch opening.'),
-      sub: tutorialText('后面你可以自由玩到晚餐和夜宵。', 'After this, you can play more freely.'),
-      focus: bottomFocus,
-      actions: drawActions
-    },
-    {
-      text: tutorialText('牌型只在不爆牌时生效。', 'Combos only activate if you do not bust.'),
-      sub: tutorialText('双拼 / 偏科会奖励热量；满汉 / 卡线会加胜局。', 'Double / one-type combos add calories; full feast / limit master add points.')
-    },
-    {
-      text: tutorialText('夜宵规则很特别。', 'Night Snack is special.'),
-      sub: tutorialText('它会一次性用完剩余外卖次数，先选搭配，再统一揭晓。', 'It uses all remaining order chances: pick first, reveal together.')
-    },
-    {
-      text: tutorialText('教学结束，接下来你可以正常玩完整局。', 'Tutorial complete. You can now finish the full round normally.'),
-      sub: tutorialText('以后不会自动弹出。', 'It will not pop up automatically again.'),
       done: true
     }
   ]
@@ -3023,6 +3059,31 @@ function getTutorialAllowedActions() {
   return step && step.actions ? step.actions : null
 }
 
+function drawDashedRoundRect(x, y, w, h, r, stroke, lineWidth, dash) {
+  ctx.save()
+  ctx.setLineDash(dash || [7, 5])
+  drawRoundRect(x, y, w, h, r, null, stroke, lineWidth || 2)
+  ctx.restore()
+}
+
+function getTutorialBoxY(focus, boxH) {
+  const margin = 14
+  if (!focus) return Math.min(H - SAFE_BOTTOM - boxH - margin, H * 0.62)
+
+  const topSpace = focus.y - SAFE_TOP - margin
+  const bottomSpace = H - SAFE_BOTTOM - (focus.y + focus.h) - margin
+
+  // 底部操作区说明优先放上方，避免压住按钮。
+  if (focus.y + focus.h > H * 0.68 && topSpace >= boxH + 6) return focus.y - boxH - margin
+  // 顶部区域说明优先放下方。
+  if (focus.y < H * 0.34 && bottomSpace >= boxH + 6) return focus.y + focus.h + margin
+  // 中间区域优先选择空间更大的一侧。
+  if (topSpace >= bottomSpace && topSpace >= boxH + 6) return focus.y - boxH - margin
+  if (bottomSpace >= boxH + 6) return focus.y + focus.h + margin
+  if (topSpace >= boxH + 6) return focus.y - boxH - margin
+  return Math.min(H - SAFE_BOTTOM - boxH - margin, Math.max(SAFE_TOP + margin, H * 0.52))
+}
+
 function drawTutorialOverlay() {
   if (!tutorialOn || appMode !== 'single') return
 
@@ -3030,35 +3091,38 @@ function drawTutorialOverlay() {
   if (!step) return
 
   ctx.save()
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.56)'
+
+  // 轻遮罩：只压暗环境，不遮住游戏内容。
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.24)'
   ctx.fillRect(0, 0, W, H)
 
   if (step.focus) {
     const f = step.focus
-    ctx.globalCompositeOperation = 'destination-out'
-    drawRoundRect(f.x, f.y, f.w, f.h, 18, '#000', null, 0)
-    ctx.globalCompositeOperation = 'source-over'
-    drawRoundRect(f.x, f.y, f.w, f.h, 18, null, '#FFE169', 3)
+    // 高亮只用虚线描边，不再用白色块遮挡内容。
+    drawDashedRoundRect(f.x, f.y, f.w, f.h, 16, '#FFE169', 3, [8, 6])
+    drawRoundRect(f.x - 3, f.y - 3, f.w + 6, f.h + 6, 18, null, 'rgba(17,17,17,0.25)', 1)
   }
 
-  const boxW = Math.min(W - 44, 330)
-  const boxH = step.sub ? 128 : 104
+  const boxW = Math.min(W - 52, lang === 'en' ? 372 : 342)
+  const lineCount = String(step.text || '').split('\n').length
+  const boxH = lang === 'en'
+    ? Math.min(214, Math.max(156, 82 + lineCount * 28))
+    : Math.min(184, Math.max(132, 64 + lineCount * 24))
   const boxX = (W - boxW) / 2
-  const boxY = Math.min(H - SAFE_BOTTOM - boxH - 20, H * 0.64)
+  const boxY = getTutorialBoxY(step.focus, boxH)
 
-  drawRoundRect(boxX + 5, boxY + 6, boxW, boxH, 20, '#111', null, 0)
-  drawRoundRect(boxX, boxY, boxW, boxH, 20, '#FFFFFF', '#111', 3)
-  wrapText(step.text, boxX + 18, boxY + 18, boxW - 36, 20, 15, '#111', 'bold', 2)
-  if (step.sub) wrapText(step.sub, boxX + 18, boxY + 58, boxW - 36, 18, 12, '#445', 'bold', 2)
+  // 说明内容：半透明底 + 虚线框，避免像弹窗一样压死画面。
+  drawRoundRect(boxX + 4, boxY + 5, boxW, boxH, 18, 'rgba(17,17,17,0.18)', null, 0)
+  drawRoundRect(boxX, boxY, boxW, boxH, 18, 'rgba(255,255,255,0.82)', null, 0)
+  drawDashedRoundRect(boxX, boxY, boxW, boxH, 18, '#111', 2, [7, 5])
 
-  if (!step.actions) {
-    const label = step.done
-      ? tutorialText('结束教学', 'Finish')
-      : tutorialText('下一步', 'Next')
-    addButton('tutorial_next', label, boxX + boxW - 108, boxY + boxH - 42, 88, 30, '#111', '#fff', 13)
-  } else {
-    drawText(tutorialText('按高亮区域操作继续', 'Use the highlighted control to continue'), boxX + boxW / 2, boxY + boxH - 30, 11, '#777', 'center', 'bold')
-  }
+  drawText(step.title || '', boxX + 18, boxY + 24, 15, '#111', 'left', 'bold')
+  wrapText(step.text, boxX + 18, boxY + 48, boxW - 36, 21, lang === 'en' ? 11 : 13, '#253044', 'bold', 4)
+
+  const label = step.done
+    ? tutorialText('结束教学', 'Finish')
+    : tutorialText('下一步', 'Next')
+  addButton('tutorial_next', label, boxX + boxW - 106, boxY + boxH - 39, 88, 28, '#111', '#fff', 12)
 
   addButton('tutorial_skip', tutorialText('跳过', 'Skip'), W - 66, Math.max(4, SAFE_TOP - 12), 54, 22, '#FFFFFF', '#111', 10)
   ctx.restore()
@@ -3160,6 +3224,12 @@ async function handleAction(id) {
 
     if (id === 'lang_toggle') {
       toggleLang()
+      return
+    }
+
+    if (id === 'tutorial_btn') {
+      startTutorialManual()
+      render()
       return
     }
 
