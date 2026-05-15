@@ -2946,13 +2946,10 @@ function getProfileWinRate(profile) {
   return `${Math.round((win / total) * 100)}%`
 }
 
-function drawProfileOverlay(profile) {
-  if (!profileOpen) return
-
-  const boxW = Math.min(W - 42, 340)
- const y = Math.max(SAFE_TOP + 32, (H - boxH) / 2 - 34)
-  const x = (W - boxW) / 2
-  const y = Math.max(SAFE_TOP + 64, (H - boxH) / 2)
+const boxW = Math.min(W - 42, 340)
+const boxH = Math.min(H - SAFE_TOP - SAFE_BOTTOM - 60, 390)
+const x = (W - boxW) / 2
+const y = Math.max(SAFE_TOP + 32, (H - boxH) / 2 - 34)
   const title = getProfileTitle(profile)
   const win = Number(profile.win || 0)
   const lose = Number(profile.lose || 0)
