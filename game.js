@@ -2950,7 +2950,7 @@ function drawProfileOverlay(profile) {
   if (!profileOpen) return
 
   const boxW = Math.min(W - 42, 340)
-  const boxH = Math.min(H - SAFE_TOP - SAFE_BOTTOM - 86, 320)
+ const y = Math.max(SAFE_TOP + 32, (H - boxH) / 2 - 34)
   const x = (W - boxW) / 2
   const y = Math.max(SAFE_TOP + 64, (H - boxH) / 2)
   const title = getProfileTitle(profile)
@@ -2995,12 +2995,12 @@ function drawProfileOverlay(profile) {
         ['最高单局有效热量', `${Number(profile.maxKcal || 0)} kcal`]
       ]
 
-  let rowY = y + 136
+  let rowY = y + 128
   rows.forEach(([label, value]) => {
     drawRoundRect(x + 20, rowY, boxW - 40, 28, 12, '#F7F1E8', null, 0)
     drawText(label, x + 34, rowY + 8, 12, '#777', 'left', 'bold')
     drawText(value, x + boxW - 34, rowY + 8, lang === 'en' && value.length > 15 ? 10 : 12, '#111', 'right', 'bold')
-    rowY += 34
+    rowY += 28
   })
 
   ctx.restore()
