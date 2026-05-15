@@ -1,5 +1,5 @@
 // game.js
-// 利禄卡 Online v8.1 总积分排行榜版
+// 利禄卡 Online v8.2 首页排行榜和我的档案版
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -1789,6 +1789,8 @@ async function maybeStartOnlineGame() {
 }
 
 function leaveToHome() {
+  leaderboardOpen = false
+  profileOpen = false
   if (unsubscribeRoom) {
     unsubscribeRoom()
     unsubscribeRoom = null
@@ -2364,6 +2366,11 @@ function drawHome() {
   if (message) wrapText(message, 32, H - SAFE_BOTTOM - 24, W - 64, 14, 11, '#E94335', 'bold', 1)
 
   drawMusicButton()
+
+  const profile = loadLocalProfile()
+  drawHomeProfileButtons(profile)
+  drawLeaderboardOverlay(profile)
+  drawProfileOverlay(profile)
 }
 
 
@@ -2882,6 +2889,7 @@ function applyProfileSettlementOnce(g) {
 }
 
 let leaderboardOpen = false
+let profileOpen = false
 
 function getLocalLeaderboard(profile) {
   const selfName = lang === 'en' ? 'Me' : '我'
@@ -2908,6 +2916,94 @@ function getLocalLeaderboard(profile) {
     if (b.kcal !== a.kcal) return b.kcal - a.kcal
     return b.score - a.score
   })
+}
+
+
+function drawHomeProfileButtons(profile) {
+  if (appMode !== 'home') return
+
+  const y = 4
+  const h = 22
+  const font = 9
+  const myLabel = lang === 'en' ? 'Me' : '我的'
+  const rankLabel = lang === 'en' ? 'Rank' : '排行榜'
+  const myW = lang === 'en' ? 38 : 40
+  const rankW = lang === 'en' ? 48 : 56
+  const gap = 6
+  const myX = W - myW - 8
+  const rankX = myX - gap - rankW
+
+  addButton('leaderboard_toggle', rankLabel, rankX, y, rankW, h, '#FFFFFF', '#111', font)
+  addButton('profile_toggle', myLabel, myX, y, myW, h, '#FFFFFF', '#111', font)
+}
+
+function getProfileWinRate(profile) {
+  const win = Number(profile.win || 0)
+  const lose = Number(profile.lose || 0)
+  const draw = Number(profile.draw || 0)
+  const total = win + lose + draw
+  if (total <= 0) return '0%'
+  return `${Math.round((win / total) * 100)}%`
+}
+
+function drawProfileOverlay(profile) {
+  if (!profileOpen) return
+
+  const boxW = Math.min(W - 42, 340)
+  const boxH = Math.min(H - SAFE_TOP - SAFE_BOTTOM - 86, 320)
+  const x = (W - boxW) / 2
+  const y = Math.max(SAFE_TOP + 64, (H - boxH) / 2)
+  const title = getProfileTitle(profile)
+  const win = Number(profile.win || 0)
+  const lose = Number(profile.lose || 0)
+  const draw = Number(profile.draw || 0)
+  const rate = getProfileWinRate(profile)
+
+  ctx.save()
+  ctx.fillStyle = 'rgba(0,0,0,0.30)'
+  ctx.fillRect(0, 0, W, H)
+
+  // 阻止点击穿透到底层首页按钮。
+  buttons.push({ id: 'noop', x: 0, y: 0, w: W, h: H })
+
+  drawRoundRect(x + 4, y + 5, boxW, boxH, 24, 'rgba(17,17,17,0.18)', null, 0)
+  drawRoundRect(x, y, boxW, boxH, 24, '#FFFFFF', '#111', 3)
+
+  drawText(lang === 'en' ? 'My Profile' : '我的档案', x + 22, y + 22, 22, '#111', 'left', 'bold')
+  addButton('profile_close', lang === 'en' ? 'Close' : '关闭', x + boxW - 78, y + 18, 56, 26, '#111', '#fff', 11)
+
+  const bigKcal = Number(profile.totalKcal || 0)
+  drawRoundRect(x + 20, y + 62, boxW - 40, 58, 18, '#111', null, 0)
+  drawText(`${bigKcal} kcal`, x + boxW / 2, y + 76, 24, '#FFE169', 'center', 'bold')
+  drawText(lang === 'en' ? 'Total Calories' : '累计卡路里', x + boxW / 2, y + 104, 11, '#FFFFFF', 'center', 'bold')
+
+  const rows = lang === 'en'
+    ? [
+        ['Score', String(Number(profile.credit || 1000))],
+        ['Title', title],
+        ['Wins / Losses', `${win} / ${lose}`],
+        ['Win Rate', rate],
+        ['Draws', String(draw)],
+        ['Best Game', `${Number(profile.maxKcal || 0)} kcal`]
+      ]
+    : [
+        ['积分', String(Number(profile.credit || 1000))],
+        ['称号', title],
+        ['胜场 / 负场', `${win} / ${lose}`],
+        ['胜率', rate],
+        ['平局', String(draw)],
+        ['最高单局有效热量', `${Number(profile.maxKcal || 0)} kcal`]
+      ]
+
+  let rowY = y + 136
+  rows.forEach(([label, value]) => {
+    drawRoundRect(x + 20, rowY, boxW - 40, 28, 12, '#F7F1E8', null, 0)
+    drawText(label, x + 34, rowY + 8, 12, '#777', 'left', 'bold')
+    drawText(value, x + boxW - 34, rowY + 8, lang === 'en' && value.length > 15 ? 10 : 12, '#111', 'right', 'bold')
+    rowY += 34
+  })
+
+  ctx.restore()
 }
 
 function drawProfileTopBar(profile) {
@@ -2941,6 +3037,9 @@ function drawLeaderboardOverlay(profile) {
   ctx.save()
   ctx.fillStyle = 'rgba(0,0,0,0.30)'
   ctx.fillRect(0, 0, W, H)
+
+  // 阻止点击穿透到底层按钮。
+  buttons.push({ id: 'noop', x: 0, y: 0, w: W, h: H })
 
   drawRoundRect(x + 4, y + 5, boxW, boxH, 24, 'rgba(17,17,17,0.18)', null, 0)
   drawRoundRect(x, y, boxW, boxH, 24, '#FFFFFF', '#111', 3)
@@ -3439,6 +3538,7 @@ async function handleAction(id) {
 
     if (id === 'leaderboard_toggle') {
       leaderboardOpen = true
+      profileOpen = false
       render()
       return
     }
@@ -3446,6 +3546,23 @@ async function handleAction(id) {
     if (id === 'leaderboard_close') {
       leaderboardOpen = false
       render()
+      return
+    }
+
+    if (id === 'profile_toggle') {
+      profileOpen = true
+      leaderboardOpen = false
+      render()
+      return
+    }
+
+    if (id === 'profile_close') {
+      profileOpen = false
+      render()
+      return
+    }
+
+    if (id === 'noop') {
       return
     }
 
