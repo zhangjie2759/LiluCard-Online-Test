@@ -2946,10 +2946,14 @@ function getProfileWinRate(profile) {
   return `${Math.round((win / total) * 100)}%`
 }
 
-const boxW = Math.min(W - 42, 340)
-const boxH = Math.min(H - SAFE_TOP - SAFE_BOTTOM - 60, 390)
-const x = (W - boxW) / 2
-const y = Math.max(SAFE_TOP + 32, (H - boxH) / 2 - 34)
+function drawProfileOverlay(profile) {
+  if (!profileOpen) return
+
+  // v8.3：档案面板加宽加高，并整体上移，避免内容溢出到面板外。
+  const boxW = Math.min(W - 28, 360)
+  const boxH = Math.min(H - SAFE_TOP - SAFE_BOTTOM - 48, 390)
+  const x = (W - boxW) / 2
+  const y = Math.max(SAFE_TOP + 30, (H - boxH) / 2 - 34)
   const title = getProfileTitle(profile)
   const win = Number(profile.win || 0)
   const lose = Number(profile.lose || 0)
@@ -2966,13 +2970,13 @@ const y = Math.max(SAFE_TOP + 32, (H - boxH) / 2 - 34)
   drawRoundRect(x + 4, y + 5, boxW, boxH, 24, 'rgba(17,17,17,0.18)', null, 0)
   drawRoundRect(x, y, boxW, boxH, 24, '#FFFFFF', '#111', 3)
 
-  drawText(lang === 'en' ? 'My Profile' : '我的档案', x + 22, y + 22, 22, '#111', 'left', 'bold')
-  addButton('profile_close', lang === 'en' ? 'Close' : '关闭', x + boxW - 78, y + 18, 56, 26, '#111', '#fff', 11)
+  drawText(lang === 'en' ? 'My Profile' : '我的档案', x + 22, y + 20, 20, '#111', 'left', 'bold')
+  addButton('profile_close', lang === 'en' ? 'Close' : '关闭', x + boxW - 78, y + 16, 56, 26, '#111', '#fff', 11)
 
   const bigKcal = Number(profile.totalKcal || 0)
-  drawRoundRect(x + 20, y + 62, boxW - 40, 58, 18, '#111', null, 0)
-  drawText(`${bigKcal} kcal`, x + boxW / 2, y + 76, 24, '#FFE169', 'center', 'bold')
-  drawText(lang === 'en' ? 'Total Calories' : '累计卡路里', x + boxW / 2, y + 104, 11, '#FFFFFF', 'center', 'bold')
+  drawRoundRect(x + 20, y + 56, boxW - 40, 58, 18, '#111', null, 0)
+  drawText(`${bigKcal} kcal`, x + boxW / 2, y + 70, 24, '#FFE169', 'center', 'bold')
+  drawText(lang === 'en' ? 'Total Calories' : '累计卡路里', x + boxW / 2, y + 98, 11, '#FFFFFF', 'center', 'bold')
 
   const rows = lang === 'en'
     ? [
@@ -2992,12 +2996,12 @@ const y = Math.max(SAFE_TOP + 32, (H - boxH) / 2 - 34)
         ['最高单局有效热量', `${Number(profile.maxKcal || 0)} kcal`]
       ]
 
-  let rowY = y + 128
+  let rowY = y + 130
   rows.forEach(([label, value]) => {
-    drawRoundRect(x + 20, rowY, boxW - 40, 28, 12, '#F7F1E8', null, 0)
-    drawText(label, x + 34, rowY + 8, 12, '#777', 'left', 'bold')
-    drawText(value, x + boxW - 34, rowY + 8, lang === 'en' && value.length > 15 ? 10 : 12, '#111', 'right', 'bold')
-    rowY += 28
+    drawRoundRect(x + 20, rowY, boxW - 40, 26, 11, '#F7F1E8', null, 0)
+    drawText(label, x + 34, rowY + 7, 11, '#777', 'left', 'bold')
+    drawText(value, x + boxW - 34, rowY + 7, lang === 'en' && value.length > 15 ? 9 : 11, '#111', 'right', 'bold')
+    rowY += 31
   })
 
   ctx.restore()
