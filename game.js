@@ -1,5 +1,5 @@
 // game.js
-// 利禄卡 Online v7.5 新手指导中英文版
+// 利禄卡 Online v8.1 总积分排行榜版
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -2881,16 +2881,88 @@ function applyProfileSettlementOnce(g) {
   return profile
 }
 
+let leaderboardOpen = false
+
+function getLocalLeaderboard(profile) {
+  const selfName = lang === 'en' ? 'Me' : '我'
+  const fake = lang === 'en'
+    ? [
+        { name: 'Calorie Judge', kcal: 128000, score: 1460 },
+        { name: 'Night Snack Assassin', kcal: 98500, score: 1320 },
+        { name: 'Carb Gambler', kcal: 32200, score: 1080 }
+      ]
+    : [
+        { name: '热量裁判王', kcal: 128000, score: 1460 },
+        { name: '夜宵刺客', kcal: 98500, score: 1320 },
+        { name: '碳水赌徒', kcal: 32200, score: 1080 }
+      ]
+
+  const me = {
+    name: selfName,
+    kcal: Number(profile.totalKcal || 0),
+    score: Number(profile.credit || 1000),
+    isMe: true
+  }
+
+  return fake.concat(me).sort((a, b) => {
+    if (b.kcal !== a.kcal) return b.kcal - a.kcal
+    return b.score - a.score
+  })
+}
+
 function drawProfileTopBar(profile) {
   const y = 30
   const h = 30
   const title = getProfileTitle(profile)
   const totalLabel = lang === 'en' ? 'Total' : '累计'
-  const creditLabel = lang === 'en' ? 'Credit' : '信用分'
-  const text = `${totalLabel} ${Number(profile.totalKcal || 0)} kcal｜${creditLabel} ${Number(profile.credit || 1000)}｜${title}`
+  const scoreLabel = lang === 'en' ? 'Score' : '积分'
+  const rankLabel = lang === 'en' ? 'Rank' : '排行榜'
+  const text = `${totalLabel} ${Number(profile.totalKcal || 0)} kcal｜${scoreLabel} ${Number(profile.credit || 1000)}｜${title}`
 
-  drawRoundRect(20, y, W - 40, h, 15, '#111', null, 0)
-  drawText(text, W / 2, y + 8, lang === 'en' ? 10 : 11, '#FFE169', 'center', 'bold')
+  const btnW = lang === 'en' ? 50 : 56
+  const barX = 20
+  const barW = W - 40
+  const textW = barW - btnW - 8
+
+  drawRoundRect(barX, y, barW, h, 15, '#111', null, 0)
+  drawText(text, barX + textW / 2 + 6, y + 8, lang === 'en' ? 9 : 10, '#FFE169', 'center', 'bold')
+  addButton('leaderboard_toggle', rankLabel, barX + barW - btnW - 5, y + 4, btnW, h - 8, '#FFE169', '#111', 9)
+}
+
+function drawLeaderboardOverlay(profile) {
+  if (!leaderboardOpen) return
+
+  const list = getLocalLeaderboard(profile)
+  const boxW = Math.min(W - 42, 340)
+  const boxH = Math.min(H - SAFE_TOP - SAFE_BOTTOM - 80, 292)
+  const x = (W - boxW) / 2
+  const y = Math.max(SAFE_TOP + 64, (H - boxH) / 2)
+
+  ctx.save()
+  ctx.fillStyle = 'rgba(0,0,0,0.30)'
+  ctx.fillRect(0, 0, W, H)
+
+  drawRoundRect(x + 4, y + 5, boxW, boxH, 24, 'rgba(17,17,17,0.18)', null, 0)
+  drawRoundRect(x, y, boxW, boxH, 24, '#FFFFFF', '#111', 3)
+
+  drawText(lang === 'en' ? 'Leaderboard' : '排行榜', x + 22, y + 22, 22, '#111', 'left', 'bold')
+  drawText(lang === 'en' ? 'Sorted by total calories' : '按累计卡路里排序', x + 22, y + 54, 12, '#777', 'left', 'bold')
+  addButton('leaderboard_close', lang === 'en' ? 'Close' : '关闭', x + boxW - 78, y + 18, 56, 26, '#111', '#fff', 11)
+
+  let rowY = y + 82
+  list.forEach((item, index) => {
+    const isMe = Boolean(item.isMe)
+    const rowH = 42
+    const fill = isMe ? '#FFE169' : '#F7F1E8'
+    drawRoundRect(x + 18, rowY, boxW - 36, rowH, 14, fill, null, 0)
+    drawText(String(index + 1), x + 36, rowY + 12, 16, isMe ? '#E94335' : '#111', 'center', 'bold')
+    drawText(item.name, x + 58, rowY + 10, 13, '#111', 'left', 'bold')
+    drawText(`${Number(item.kcal || 0)} kcal`, x + boxW - 30, rowY + 9, 12, '#111', 'right', 'bold')
+    drawText(`${lang === 'en' ? 'Score' : '积分'} ${Number(item.score || 1000)}`, x + boxW - 30, rowY + 25, 10, '#777', 'right', 'bold')
+    rowY += rowH + 8
+  })
+
+  ctx.restore()
 }
 
 function drawDayResult() {
@@ -2983,6 +3055,8 @@ function drawDayResult() {
   } else {
     addButton('restart_home', t('backHome'), 24, H - SAFE_BOTTOM - 72, W - 48, 58, '#111', '#fff', 22)
   }
+
+  drawLeaderboardOverlay(profile)
 }
 
 // =========================
@@ -3359,6 +3433,18 @@ async function handleAction(id) {
 
     if (id === 'tutorial_btn') {
       startTutorialManual()
+      render()
+      return
+    }
+
+    if (id === 'leaderboard_toggle') {
+      leaderboardOpen = true
+      render()
+      return
+    }
+
+    if (id === 'leaderboard_close') {
+      leaderboardOpen = false
       render()
       return
     }
