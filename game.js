@@ -1,5 +1,5 @@
 // game.js
-// 利禄卡 Online v8.2 首页排行榜和我的档案版
+// 利禄卡 Online v8.4 音效反馈版
 // 状态机：lobby / opening / meal_playing / meal_result / night_picking / day_result
 
 const IS_WEB = typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -394,6 +394,178 @@ function toggleBgm() {
 
   requestRender()
 }
+
+
+// =========================
+// 音效 SFX（独立于 BGM；关闭音乐不影响音效）
+// =========================
+let sfxCtx = null
+let sfxUnlocked = false
+let lastSfxAt = {}
+const SFX_MASTER_VOLUME = 0.42
+
+function getSfxCtx() {
+  if (sfxCtx) return sfxCtx
+  const AudioCtx = window.AudioContext || window.webkitAudioContext
+  if (!AudioCtx) return null
+  try {
+    sfxCtx = new AudioCtx()
+  } catch (err) {
+    sfxCtx = null
+  }
+  return sfxCtx
+}
+
+function unlockSfx() {
+  const ac = getSfxCtx()
+  if (!ac) return
+  if (ac.state === 'suspended') {
+    ac.resume().catch(() => {})
+  }
+  sfxUnlocked = true
+}
+
+function sfxCooldown(name, ms) {
+  const now = Date.now()
+  if (lastSfxAt[name] && now - lastSfxAt[name] < ms) return true
+  lastSfxAt[name] = now
+  return false
+}
+
+function playTone(freq, duration, type, volume, startAt, endFreq) {
+  const ac = getSfxCtx()
+  if (!ac) return
+  const t0 = ac.currentTime + (startAt || 0)
+  const osc = ac.createOscillator()
+  const gain = ac.createGain()
+  osc.type = type || 'sine'
+  osc.frequency.setValueAtTime(freq, t0)
+  if (endFreq) osc.frequency.exponentialRampToValueAtTime(Math.max(20, endFreq), t0 + duration)
+  gain.gain.setValueAtTime(0.0001, t0)
+  gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, (volume || 0.12) * SFX_MASTER_VOLUME), t0 + 0.012)
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration)
+  osc.connect(gain)
+  gain.connect(ac.destination)
+  osc.start(t0)
+  osc.stop(t0 + duration + 0.03)
+}
+
+function playNoise(duration, volume, startAt) {
+  const ac = getSfxCtx()
+  if (!ac) return
+  const t0 = ac.currentTime + (startAt || 0)
+  const len = Math.max(1, Math.floor(ac.sampleRate * duration))
+  const buffer = ac.createBuffer(1, len, ac.sampleRate)
+  const data = buffer.getChannelData(0)
+  for (let i = 0; i < len; i++) {
+    data[i] = (Math.random() * 2 - 1) * (1 - i / len)
+  }
+  const src = ac.createBufferSource()
+  const filter = ac.createBiquadFilter()
+  const gain = ac.createGain()
+  filter.type = 'highpass'
+  filter.frequency.setValueAtTime(700, t0)
+  gain.gain.setValueAtTime(Math.max(0.0001, (volume || 0.08) * SFX_MASTER_VOLUME), t0)
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration)
+  src.buffer = buffer
+  src.connect(filter)
+  filter.connect(gain)
+  gain.connect(ac.destination)
+  src.start(t0)
+  src.stop(t0 + duration + 0.02)
+}
+
+function playSfx(name) {
+  unlockSfx()
+  if (!sfxUnlocked || !getSfxCtx()) return
+
+  if (name === 'tap') {
+    if (sfxCooldown('tap', 32)) return
+    playTone(620, 0.045, 'square', 0.055, 0, 420)
+    return
+  }
+
+  if (name === 'draw') {
+    if (sfxCooldown('draw', 70)) return
+    playNoise(0.075, 0.055, 0)
+    playTone(520, 0.055, 'triangle', 0.05, 0.015, 760)
+    return
+  }
+
+  if (name === 'ticket') {
+    if (sfxCooldown('ticket', 120)) return
+    playNoise(0.18, 0.07, 0)
+    playTone(440, 0.06, 'triangle', 0.045, 0.04, 660)
+    playTone(760, 0.055, 'square', 0.035, 0.12, 900)
+    return
+  }
+
+  if (name === 'stand') {
+    if (sfxCooldown('stand', 120)) return
+    playTone(330, 0.08, 'triangle', 0.07, 0, 260)
+    playTone(520, 0.06, 'triangle', 0.045, 0.055, 520)
+    return
+  }
+
+  if (name === 'bust') {
+    if (sfxCooldown('bust', 280)) return
+    playNoise(0.18, 0.12, 0)
+    playTone(180, 0.16, 'sawtooth', 0.095, 0.02, 80)
+    playTone(95, 0.12, 'square', 0.055, 0.12, 70)
+    return
+  }
+
+  if (name === 'reveal') {
+    if (sfxCooldown('reveal', 250)) return
+    playNoise(0.14, 0.09, 0)
+    playTone(360, 0.08, 'triangle', 0.055, 0.03, 580)
+    playTone(720, 0.1, 'triangle', 0.075, 0.1, 1040)
+    return
+  }
+
+  if (name === 'mealWin') {
+    if (sfxCooldown('mealWin', 240)) return
+    playTone(480, 0.08, 'triangle', 0.06, 0, 620)
+    playTone(680, 0.09, 'triangle', 0.07, 0.08, 920)
+    return
+  }
+
+  if (name === 'mealLose') {
+    if (sfxCooldown('mealLose', 240)) return
+    playTone(260, 0.11, 'triangle', 0.07, 0, 170)
+    playTone(140, 0.13, 'sine', 0.055, 0.1, 100)
+    return
+  }
+
+  if (name === 'mealDraw') {
+    if (sfxCooldown('mealDraw', 240)) return
+    playTone(360, 0.07, 'triangle', 0.05, 0, 360)
+    playTone(360, 0.07, 'triangle', 0.05, 0.09, 360)
+    return
+  }
+
+  if (name === 'cash') {
+    if (sfxCooldown('cash', 500)) return
+    playTone(760, 0.065, 'triangle', 0.055, 0, 980)
+    playTone(980, 0.075, 'triangle', 0.065, 0.08, 1280)
+    playTone(1280, 0.09, 'triangle', 0.07, 0.17, 1580)
+    return
+  }
+
+  if (name === 'scoreDown') {
+    if (sfxCooldown('scoreDown', 500)) return
+    playTone(260, 0.1, 'triangle', 0.055, 0, 180)
+    return
+  }
+}
+
+function playMealResultSfx(winner) {
+  const selfId = getSelfId()
+  if (!winner) playSfx('mealDraw')
+  else if (winner === selfId) playSfx('mealWin')
+  else playSfx('mealLose')
+}
+
 
 function drawMusicButton() {
   const label = bgmLoadFailed
@@ -1021,6 +1193,8 @@ function settleMeal(g) {
     resultText = '双方热量相同，本餐平局'
   }
 
+  playMealResultSfx(winner)
+
   const p1Point = getMealPoint(g, 'p1', g.mealIndex)
   const p2Point = getMealPoint(g, 'p2', g.mealIndex)
 
@@ -1155,11 +1329,14 @@ function applyDraw(g, pid, type) {
     card.privateCard = safeArray(g.players[pid].cards).length === 0
     g.players[pid].cards.push(card)
 
-    if (isBusted(g, pid)) {
+    const localOpeningBust = isBusted(g, pid)
+    if (localOpeningBust) {
       // 只有自己界面会通过自己的总热量知道爆牌；
       // 不在共享 message 里暴露给对方。
       g.players[pid].busted = true
     }
+
+    if (pid === getSelfId()) playSfx(localOpeningBust ? 'bust' : 'draw')
 
     g.message = lang === 'en' ? `${getPlayerName(pid)} drew an opening card` : `${getPlayerName(pid)}抽了一张起手牌`
 
@@ -1178,10 +1355,13 @@ function applyDraw(g, pid, type) {
     g.players[pid].ordersUsed += 1
     g.records[pid].dayOrdersUsed += 1
 
-    if (isBusted(g, pid)) {
+    const localMealBust = isBusted(g, pid)
+    if (localMealBust) {
       // v2.4：爆牌只记录在状态里，不自动结束，也不广播给对方。
       g.players[pid].busted = true
     }
+
+    if (pid === getSelfId()) playSfx(localMealBust ? 'bust' : 'draw')
 
     g.message = lang === 'en' ? `${getPlayerName(pid)} ordered ${foodTypeLabel(type)}` : `${getPlayerName(pid)}点了一单${type}外卖`
 
@@ -1203,6 +1383,8 @@ function applyDraw(g, pid, type) {
 
     g.players[pid].nightChoices.push(type)
     g.records[pid].dayOrdersUsed += 1
+
+    if (pid === getSelfId()) playSfx('draw')
 
     const remain = getRemainingOrders(g, pid)
     g.message = lang === 'en' ? `${getPlayerName(pid)} picked a night order; ${remain} left` : `${getPlayerName(pid)}选择了一单夜宵；剩余 ${remain} 单`
@@ -1237,6 +1419,7 @@ function applyStand(g, pid) {
     }
 
     g.players[pid].stood = true
+    if (pid === getSelfId()) playSfx('stand')
     g.message = lang === 'en' ? `${getPlayerName(pid)} chose to eat` : `${getPlayerName(pid)}选择收手`
 
     if (g.players.p1.stood && g.players.p2.stood) {
@@ -1259,6 +1442,7 @@ function applyStand(g, pid) {
 }
 
 function revealNightAndSettle(g) {
+  playSfx('reveal')
   ;['p1', 'p2'].forEach(pid => {
     const player = g.players[pid]
     safeArray(player.nightChoices).forEach(type => {
@@ -2276,10 +2460,12 @@ function handleTarotSlotTap() {
   if (rulesExpanded) return
 
   if (tarotState === 0) {
+    playSfx('ticket')
     tarotCard = pickTarotCard()
     tarotState = 1
     tarotRevealStartedAt = Date.now()
   } else {
+    playSfx('tap')
     tarotState = 0
     tarotCard = null
     tarotRevealStartedAt = 0
@@ -2885,6 +3071,9 @@ function applyProfileSettlementOnce(g) {
     localStorage.setItem(PROFILE_LAST_SETTLE_KEY, settleId)
   } catch (err) {}
 
+  if (winner === selfId) playSfx('cash')
+  else if (winner && winner !== selfId) playSfx('scoreDown')
+
   return profile
 }
 
@@ -3472,14 +3661,17 @@ function render() {
 
 async function handleAction(id) {
   const selfId = getSelfId()
+  unlockSfx()
 
   if (tutorialOn) {
     if (id === 'tutorial_next') {
+      playSfx('tap')
       advanceTutorial()
       return
     }
 
     if (id === 'tutorial_skip') {
+      playSfx('tap')
       finishTutorial()
       return
     }
@@ -3510,6 +3702,9 @@ async function handleAction(id) {
     onlineActionLocked = true
     onlineActionLockUntil = Date.now() + 1800
   }
+
+  const noTapSfxActions = ['draw_meat', 'draw_veg', 'draw_staple', 'draw_dessert', 'stand', 'reveal_night', 'tarot_slot', 'noop']
+  if (!noTapSfxActions.includes(id)) playSfx('tap')
 
   pendingActionId = id
 
