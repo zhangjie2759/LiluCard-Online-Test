@@ -398,11 +398,12 @@ function toggleBgm() {
 
 // =========================
 // 音效 SFX（独立于 BGM；关闭音乐不影响音效）
+// v8.5：整体音效音量提高，仍保留 BGM 和音效相互独立。
 // =========================
 let sfxCtx = null
 let sfxUnlocked = false
 let lastSfxAt = {}
-const SFX_MASTER_VOLUME = 0.42
+const SFX_MASTER_VOLUME = 0.82
 
 function getSfxCtx() {
   if (sfxCtx) return sfxCtx
